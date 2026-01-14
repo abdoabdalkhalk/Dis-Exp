@@ -105,6 +105,11 @@ def download_and_upload(file_url, token, channel_id):
 def index():
     return render_template('index.html')
 
+@app.route('/health')
+def health():
+    """للتحقق من أن السيرفر يعمل"""
+    return jsonify({'status': 'ok', 'message': 'السيرفر يعمل بشكل صحيح'})
+
 @app.route('/upload', methods=['POST'])
 def upload():
     data = request.json
