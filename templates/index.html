@@ -130,6 +130,12 @@
             margin: 0 auto;
         }
         
+        .progress-text {
+            margin-top: 10px;
+            color: #4a5568;
+            font-size: 14px;
+        }
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -142,7 +148,8 @@
         
         <div class="info">
             💡 هذه الخدمة تقوم بتحميل الملف من الرابط المباشر ورفعه إلى قناة Discord باستخدام حسابك<br>
-            ⚠️ استخدم توكن حسابك الشخصي (User Token) - احذر من مشاركته مع أحد
+            ⚠️ استخدم توكن حسابك الشخصي (User Token) - احذر من مشاركته مع أحد<br>
+            📦 الملفات الكبيرة قد تستغرق عدة دقائق (حتى 15 دقيقة)
         </div>
         
         <form id="uploadForm">
@@ -168,7 +175,8 @@
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p style="margin-top: 10px; color: #4a5568;">جاري الرفع...</p>
+                <p class="progress-text">جاري الرفع... قد يستغرق عدة دقائق للملفات الكبيرة</p>
+                <p class="progress-text" style="font-size: 12px; color: #718096;">لا تغلق هذه الصفحة</p>
             </div>
             
             <div class="message" id="message"></div>
@@ -197,13 +205,27 @@
             };
             
             try {
+                // زيادة timeout للملفات الكبيرة (15 دقيقة)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 minutes
+                
                 const response = await fetch('/upload', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(data)
+                    body: JSON.stringify(data),
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
+                
+                // التحقق من نوع المحتوى
+                const contentType = response.headers.get('content-type');
+                
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('السيرفر لم يرد بـ JSON - قد يكون هناك مشكلة في الاتصال');
+                }
                 
                 const result = await response.json();
                 
@@ -212,7 +234,10 @@
                 
                 if (result.success) {
                     message.className = 'message success';
-                    message.textContent = '✅ ' + result.message;
+                    message.textContent = result.message;
+                    
+                    // مسح الحقول بعد النجاح
+                    document.getElementById('file_url').value = '';
                 } else {
                     message.className = 'message error';
                     message.textContent = '❌ ' + result.message;
@@ -222,7 +247,14 @@
                 loading.style.display = 'none';
                 message.style.display = 'block';
                 message.className = 'message error';
-                message.textContent = '❌ حدث خطأ في الاتصال: ' + error.message;
+                
+                if (error.name === 'AbortError') {
+                    message.textContent = '❌ انتهت المهلة (15 دقيقة) - الملف كبير جداً أو الاتصال بطيء جداً';
+                } else if (error.message.includes('JSON')) {
+                    message.innerHTML = '❌ خطأ في الاتصال بالسيرفر<br><small>قد يكون Render توقف أو هناك مشكلة في الشبكة</small>';
+                } else {
+                    message.textContent = '❌ حدث خطأ: ' + error.message;
+                }
             } finally {
                 submitBtn.disabled = false;
             }
