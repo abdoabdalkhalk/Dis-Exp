@@ -5,6 +5,7 @@ import json
 import mimetypes
 from threading import Thread
 from datetime import datetime
+import traceback
 
 app = Flask(__name__)
 
@@ -26,6 +27,7 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
         
         # If DM, get or create DM channel
         if is_dm and user_id:
+            print(f"[DEBUG] Creating DM channel for user {user_id}")
             dm_url = 'https://discord.com/api/v10/users/@me/channels'
             dm_headers = {
                 'Authorization': token,
@@ -37,17 +39,24 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
                 json={'recipient_id': user_id}
             )
             
+            print(f"[DEBUG] DM Response Status: {dm_response.status_code}")
+            print(f"[DEBUG] DM Response: {dm_response.text}")
+            
             if dm_response.status_code == 200:
                 channel_id = dm_response.json()['id']
+                print(f"[DEBUG] DM Channel ID: {channel_id}")
             else:
                 raise Exception(f"Failed to create DM channel: {dm_response.text}")
         
         # Download file
+        print(f"[DEBUG] Downloading from: {file_url}")
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        response = requests.get(file_url, headers=headers, stream=True, timeout=30)
+        response = requests.get(file_url, headers=headers, stream=True, timeout=60)
         response.raise_for_status()
+        
+        print(f"[DEBUG] Download response status: {response.status_code}")
         
         # Get filename
         if options.get('custom_filename'):
@@ -64,10 +73,14 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
             if ext:
                 filename += ext
         
+        print(f"[DEBUG] Filename: {filename}")
+        
         # Save file temporarily
         temp_file = f'/tmp/{upload_id}_{filename}'
         total_size = int(response.headers.get('content-length', 0))
         downloaded = 0
+        
+        print(f"[DEBUG] Total size: {total_size} bytes ({get_file_size_mb(total_size)} MB)")
         
         upload_status[upload_id] = {
             'status': 'downloading',
@@ -83,6 +96,8 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
                     if total_size > 0:
                         progress = int((downloaded / total_size) * 100)
                         upload_status[upload_id]['progress'] = progress
+        
+        print(f"[DEBUG] Download completed: {downloaded} bytes")
         
         upload_status[upload_id] = {'status': 'uploading', 'progress': 100}
         
@@ -114,30 +129,38 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
             'Authorization': token
         }
         
+        print(f"[DEBUG] Uploading to Discord channel: {channel_id}")
+        print(f"[DEBUG] File size: {os.path.getsize(temp_file)} bytes")
+        
         with open(temp_file, 'rb') as f:
             files = {'file': (filename, f)}
             
             # Add payload_json if there's additional content
             if payload:
-                import json
                 discord_response = requests.post(
                     discord_url, 
                     headers=headers, 
                     files=files,
-                    data={'payload_json': json.dumps(payload)}
+                    data={'payload_json': json.dumps(payload)},
+                    timeout=120
                 )
             else:
                 discord_response = requests.post(
                     discord_url, 
                     headers=headers, 
-                    files=files
+                    files=files,
+                    timeout=120
                 )
+        
+        print(f"[DEBUG] Discord response status: {discord_response.status_code}")
+        print(f"[DEBUG] Discord response: {discord_response.text[:500]}")
         
         # Delete temporary file
         try:
             os.remove(temp_file)
-        except:
-            pass
+            print(f"[DEBUG] Temporary file deleted")
+        except Exception as e:
+            print(f"[DEBUG] Failed to delete temp file: {e}")
         
         if discord_response.status_code == 200:
             response_data = discord_response.json()
@@ -150,28 +173,52 @@ def download_and_upload(upload_id, file_url, token, channel_id, options):
                 'file_url': file_info.get('url', ''),
                 'file_size': get_file_size_mb(file_info.get('size', 0))
             }
+            print(f"[DEBUG] Upload completed successfully!")
         else:
-            error_msg = discord_response.json().get('message', discord_response.text)
+            error_data = discord_response.json() if discord_response.headers.get('content-type', '').startswith('application/json') else {}
+            error_msg = error_data.get('message', discord_response.text)
+            
+            # Check specific error codes
+            if discord_response.status_code == 401:
+                error_msg = "Invalid token! Please check your User Token."
+            elif discord_response.status_code == 403:
+                error_msg = "No permission! Check if you can write in this channel."
+            elif discord_response.status_code == 404:
+                error_msg = "Channel not found! Check your Channel ID."
+            elif 'request entity too large' in error_msg.lower():
+                error_msg = "File too large! Max size: 25MB (or 50MB/500MB with Nitro)"
+            
             upload_status[upload_id] = {
                 'status': 'failed',
-                'message': f'Discord error: {error_msg}'
+                'message': f'Discord error ({discord_response.status_code}): {error_msg}'
             }
+            print(f"[ERROR] Discord upload failed: {error_msg}")
             
     except requests.exceptions.Timeout:
+        error_msg = 'Operation timeout. File may be too large or connection too slow.'
         upload_status[upload_id] = {
             'status': 'failed',
-            'message': 'Download timeout. The link is too slow.'
+            'message': error_msg
         }
+        print(f"[ERROR] {error_msg}")
+        
     except requests.exceptions.RequestException as e:
+        error_msg = f'Network error: {str(e)}'
         upload_status[upload_id] = {
             'status': 'failed',
-            'message': f'Download error: {str(e)}'
+            'message': error_msg
         }
+        print(f"[ERROR] {error_msg}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        
     except Exception as e:
+        error_msg = f'Unexpected error: {str(e)}'
         upload_status[upload_id] = {
             'status': 'failed',
-            'message': f'Unexpected error: {str(e)}'
+            'message': error_msg
         }
+        print(f"[ERROR] {error_msg}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
 
 @app.route('/')
 def index():
@@ -186,6 +233,10 @@ def upload():
     
     if not all([file_url, token, channel_id]):
         return jsonify({'success': False, 'message': 'URL, token, and channel ID are required'})
+    
+    # Validate token format
+    if not token.startswith(('mfa.', 'MTk', 'ODc', 'OTc', 'Njc')):
+        return jsonify({'success': False, 'message': 'Invalid token format! Make sure you copied it correctly.'})
     
     # Create unique operation ID
     upload_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -203,6 +254,10 @@ def upload():
         'is_dm': data.get('is_dm', False),
         'user_id': data.get('user_id', '').strip()
     }
+    
+    print(f"[INFO] Starting upload {upload_id}")
+    print(f"[INFO] File URL: {file_url}")
+    print(f"[INFO] Channel ID: {channel_id}")
     
     # Run operation in background
     thread = Thread(target=download_and_upload, args=(upload_id, file_url, token, channel_id, options))
