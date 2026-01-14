@@ -22,5 +22,5 @@ ENV PORT=10000
 # فتح المنفذ
 EXPOSE 10000
 
-# تشغيل التطبيق باستخدام gunicorn
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 300 discord_uploader:app
+# تشغيل التطبيق مع timeout 15 دقيقة للملفات الكبيرة
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 900 --keep-alive 5 --graceful-timeout 900 discord_uploader:app
