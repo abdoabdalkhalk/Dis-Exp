@@ -10,7 +10,7 @@ app = Flask(__name__)
 # تخزين حالة الـ Jobs في الذاكرة
 jobs = {}
 
-def download_and_upload(job_id, file_url, token, channel_id):
+def download_and_upload(job_id, file_url, token, channel_id, custom_filename=None):
     """تحميل الملف ورفعه إلى Discord"""
     try:
         jobs[job_id]['status'] = 'downloading'
@@ -23,10 +23,27 @@ def download_and_upload(job_id, file_url, token, channel_id):
         response = requests.get(file_url, headers=headers, stream=True, timeout=600)
         response.raise_for_status()
         
-        # الحصول على اسم الملف
-        filename = file_url.split('/')[-1].split('?')[0]
-        if not filename or '.' not in filename:
-            filename = 'file.bin'
+        # الحصول على اسم الملف والامتداد
+        original_filename = file_url.split('/')[-1].split('?')[0]
+        if not original_filename or '.' not in original_filename:
+            original_filename = 'file.bin'
+        
+        # استخراج الامتداد
+        file_extension = ''
+        if '.' in original_filename:
+            file_extension = '.' + original_filename.split('.')[-1]
+        
+        # تطبيق الاسم المخصص مع الحفاظ على الامتداد
+        if custom_filename and custom_filename.strip():
+            custom_filename = custom_filename.strip()
+            # إزالة الامتداد من الاسم المخصص إن وُجد
+            if '.' in custom_filename:
+                custom_filename = '.'.join(custom_filename.split('.')[:-1])
+            filename = custom_filename + file_extension
+        else:
+            filename = original_filename
+        
+        print(f"[{job_id}] اسم الملف: {filename} (الامتداد: {file_extension})")
         
         # حفظ الملف مؤقتاً
         temp_file = f'/tmp/{job_id}_{filename}'
@@ -97,7 +114,7 @@ def download_and_upload(job_id, file_url, token, channel_id):
         if discord_response.status_code == 200:
             total_time = time.time() - start_time
             jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['message'] = f'✅ تم رفع الملف بنجاح في {total_time:.1f} ثانية!'
+            jobs[job_id]['message'] = f'✅ تم رفع الملف "{filename}" بنجاح في {total_time:.1f} ثانية!'
             jobs[job_id]['progress'] = 'اكتمل!'
         else:
             error_data = discord_response.text[:500]
@@ -135,6 +152,7 @@ def upload():
         file_url = data.get('file_url')
         token = data.get('token')
         channel_id = data.get('channel_id')
+        custom_filename = data.get('custom_filename', '')
         
         if not all([file_url, token, channel_id]):
             return jsonify({'success': False, 'message': 'جميع الحقول مطلوبة'}), 400
@@ -149,11 +167,11 @@ def upload():
         }
         
         # تشغيل في الخلفية
-        thread = Thread(target=download_and_upload, args=(job_id, file_url, token, channel_id))
+        thread = Thread(target=download_and_upload, args=(job_id, file_url, token, channel_id, custom_filename))
         thread.daemon = True
         thread.start()
         
-        print(f"[{job_id}] Job created and started")
+        print(f"[{job_id}] Job created and started (custom name: {custom_filename or 'none'})")
         
         # رد فوري للمستخدم
         return jsonify({
