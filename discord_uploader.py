@@ -2,13 +2,21 @@ from flask import Flask, render_template, request, jsonify
 import requests
 import os
 import time
+import uuid
+from threading import Thread
 
 app = Flask(__name__)
 
-def download_and_upload(file_url, token, channel_id):
+# تخزين حالة الـ Jobs في الذاكرة
+jobs = {}
+
+def download_and_upload(job_id, file_url, token, channel_id):
     """تحميل الملف ورفعه إلى Discord"""
     try:
-        print(f"[INFO] بدء التحميل من: {file_url}")
+        jobs[job_id]['status'] = 'downloading'
+        jobs[job_id]['progress'] = 'بدء التحميل...'
+        
+        print(f"[{job_id}] بدء التحميل من: {file_url}")
         
         # تحميل الملف
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -21,24 +29,32 @@ def download_and_upload(file_url, token, channel_id):
             filename = 'file.bin'
         
         # حفظ الملف مؤقتاً
-        temp_file = f'/tmp/{filename}'
+        temp_file = f'/tmp/{job_id}_{filename}'
         total_size = int(response.headers.get('content-length', 0))
         downloaded = 0
         
-        print(f"[INFO] حجم الملف: {total_size / (1024*1024):.2f} MB")
+        size_mb = total_size / (1024*1024)
+        print(f"[{job_id}] حجم الملف: {size_mb:.2f} MB")
+        jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f} MB'
         
         start_time = time.time()
+        last_update = time.time()
+        
         with open(temp_file, 'wb') as f:
             for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
                 if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
-                    if total_size > 0:
+                    
+                    # تحديث التقدم كل ثانية
+                    if total_size > 0 and time.time() - last_update > 1:
                         progress = (downloaded / total_size) * 100
-                        print(f"[INFO] التحميل: {progress:.1f}%")
+                        speed = downloaded / (time.time() - start_time) / (1024*1024)
+                        jobs[job_id]['progress'] = f'التحميل: {progress:.1f}% ({speed:.1f} MB/s)'
+                        last_update = time.time()
         
         download_time = time.time() - start_time
-        print(f"[INFO] انتهى التحميل في {download_time:.1f} ثانية")
+        print(f"[{job_id}] انتهى التحميل في {download_time:.1f} ثانية")
         
         # التحقق من حجم الملف
         file_size = os.path.getsize(temp_file)
@@ -46,18 +62,17 @@ def download_and_upload(file_url, token, channel_id):
         
         if file_size > max_size:
             os.remove(temp_file)
-            return {
-                'success': False, 
-                'message': f'الملف كبير جداً ({file_size/(1024*1024):.1f}MB). الحد الأقصى 500MB'
-            }
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = f'الملف كبير جداً ({file_size/(1024*1024):.1f}MB). الحد الأقصى 500MB'
+            return
         
-        print(f"[INFO] بدء الرفع إلى Discord...")
+        jobs[job_id]['status'] = 'uploading'
+        jobs[job_id]['progress'] = 'بدء الرفع إلى Discord...'
+        print(f"[{job_id}] بدء الرفع إلى Discord...")
         
         # رفع الملف إلى Discord
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
-        headers = {
-            'Authorization': token
-        }
+        headers = {'Authorization': token}
         
         upload_start = time.time()
         with open(temp_file, 'rb') as f:
@@ -66,40 +81,42 @@ def download_and_upload(file_url, token, channel_id):
                 discord_url, 
                 headers=headers, 
                 files=files,
-                timeout=600  # 10 دقائق timeout
+                timeout=600
             )
         
         upload_time = time.time() - upload_start
-        print(f"[INFO] انتهى الرفع في {upload_time:.1f} ثانية")
+        print(f"[{job_id}] انتهى الرفع في {upload_time:.1f} ثانية")
         
         # حذف الملف المؤقت
         try:
             os.remove(temp_file)
-            print(f"[INFO] تم حذف الملف المؤقت")
-        except:
-            pass
+            print(f"[{job_id}] تم حذف الملف المؤقت")
+        except Exception as e:
+            print(f"[{job_id}] فشل حذف الملف: {e}")
         
         if discord_response.status_code == 200:
             total_time = time.time() - start_time
-            return {
-                'success': True, 
-                'message': f'✅ تم رفع الملف بنجاح! ({total_time:.1f} ثانية)'
-            }
+            jobs[job_id]['status'] = 'completed'
+            jobs[job_id]['message'] = f'✅ تم رفع الملف بنجاح في {total_time:.1f} ثانية!'
+            jobs[job_id]['progress'] = 'اكتمل!'
         else:
-            error_msg = discord_response.text
-            print(f"[ERROR] فشل الرفع: {error_msg}")
-            return {
-                'success': False, 
-                'message': f'خطأ من Discord: {discord_response.status_code} - {error_msg[:200]}'
-            }
+            error_data = discord_response.text[:500]
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = f'خطأ من Discord ({discord_response.status_code}): {error_data}'
+            print(f"[{job_id}] Discord error: {error_data}")
             
     except requests.Timeout:
-        return {'success': False, 'message': 'انتهت المهلة - الملف كبير جداً أو الاتصال بطيء'}
+        jobs[job_id]['status'] = 'failed'
+        jobs[job_id]['message'] = 'انتهت المهلة - الملف كبير جداً أو الاتصال بطيء'
+        print(f"[{job_id}] Timeout")
     except requests.RequestException as e:
-        return {'success': False, 'message': f'خطأ في الاتصال: {str(e)}'}
+        jobs[job_id]['status'] = 'failed'
+        jobs[job_id]['message'] = f'خطأ في الاتصال: {str(e)[:200]}'
+        print(f"[{job_id}] Request error: {e}")
     except Exception as e:
-        print(f"[ERROR] خطأ غير متوقع: {str(e)}")
-        return {'success': False, 'message': f'خطأ: {str(e)}'}
+        jobs[job_id]['status'] = 'failed'
+        jobs[job_id]['message'] = f'خطأ غير متوقع: {str(e)[:200]}'
+        print(f"[{job_id}] Unexpected error: {e}")
 
 @app.route('/')
 def index():
@@ -108,22 +125,71 @@ def index():
 @app.route('/health')
 def health():
     """للتحقق من أن السيرفر يعمل"""
-    return jsonify({'status': 'ok', 'message': 'السيرفر يعمل بشكل صحيح'})
+    return jsonify({'status': 'ok', 'message': 'Server is running'})
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    data = request.json
-    file_url = data.get('file_url')
-    token = data.get('token')
-    channel_id = data.get('channel_id')
+    """بدء عملية الرفع"""
+    try:
+        data = request.json
+        file_url = data.get('file_url')
+        token = data.get('token')
+        channel_id = data.get('channel_id')
+        
+        if not all([file_url, token, channel_id]):
+            return jsonify({'success': False, 'message': 'جميع الحقول مطلوبة'}), 400
+        
+        # إنشاء Job ID
+        job_id = str(uuid.uuid4())[:8]
+        jobs[job_id] = {
+            'status': 'queued',
+            'progress': 'في الانتظار...',
+            'message': '',
+            'created_at': time.time()
+        }
+        
+        # تشغيل في الخلفية
+        thread = Thread(target=download_and_upload, args=(job_id, file_url, token, channel_id))
+        thread.daemon = True
+        thread.start()
+        
+        print(f"[{job_id}] Job created and started")
+        
+        # رد فوري للمستخدم
+        return jsonify({
+            'success': True, 
+            'job_id': job_id,
+            'message': 'بدأت عملية الرفع - تابع الحالة'
+        })
+        
+    except Exception as e:
+        print(f"Error in /upload: {e}")
+        return jsonify({'success': False, 'message': f'خطأ في السيرفر: {str(e)}'}), 500
+
+@app.route('/status/<job_id>')
+def status(job_id):
+    """التحقق من حالة الرفع"""
+    if job_id not in jobs:
+        return jsonify({'error': 'Job not found', 'status': 'not_found'}), 404
     
-    if not all([file_url, token, channel_id]):
-        return jsonify({'success': False, 'message': 'جميع الحقول مطلوبة'})
+    job_data = jobs[job_id]
     
-    # تنفيذ العملية مباشرة (بدون Thread)
-    result = download_and_upload(file_url, token, channel_id)
-    return jsonify(result)
+    # حذف الـ Jobs القديمة (أكثر من ساعة)
+    if time.time() - job_data.get('created_at', 0) > 3600:
+        if job_data['status'] in ['completed', 'failed']:
+            del jobs[job_id]
+            return jsonify({'error': 'Job expired', 'status': 'expired'}), 410
+    
+    return jsonify(job_data)
+
+@app.route('/jobs')
+def list_jobs():
+    """عرض كل الـ Jobs (للتصحيح)"""
+    return jsonify({
+        'total': len(jobs),
+        'jobs': {k: v for k, v in jobs.items()}
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
