@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord File Uploader</title>
+    <title>Discord File Uploader Pro</title>
     <style>
         * {
             margin: 0;
@@ -26,15 +26,24 @@
             border-radius: 20px;
             padding: 40px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 500px;
+            max-width: 600px;
             width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         
         h1 {
             color: #5865F2;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
             font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
         }
         
         .form-group {
@@ -46,20 +55,100 @@
             margin-bottom: 8px;
             color: #4a5568;
             font-weight: 600;
+            font-size: 14px;
         }
         
-        input {
+        .required {
+            color: #e53e3e;
+        }
+        
+        input, textarea {
             width: 100%;
             padding: 12px 15px;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
             font-size: 14px;
-            transition: border-color 0.3s;
+            transition: all 0.3s;
+            font-family: inherit;
         }
         
-        input:focus {
+        input:focus, textarea:focus {
             outline: none;
             border-color: #5865F2;
+            box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.1);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        
+        .toggle-section {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 2px dashed #cbd5e0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .toggle-section:hover {
+            border-color: #5865F2;
+            background: #edf2f7;
+        }
+        
+        .toggle-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .toggle-title {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 15px;
+        }
+        
+        .toggle-indicator {
+            background: #5865F2;
+            color: white;
+            border-radius: 12px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .toggle-content {
+            display: none;
+            margin-top: 15px;
+        }
+        
+        .toggle-content.active {
+            display: block;
+        }
+        
+        .color-picker-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        input[type="color"] {
+            width: 60px;
+            height: 40px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .color-preview {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
         }
         
         button {
@@ -72,103 +161,282 @@
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s;
             margin-top: 10px;
         }
         
-        button:hover {
+        button:hover:not(:disabled) {
             background: #4752c4;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
         }
         
         button:disabled {
             background: #cbd5e0;
             cursor: not-allowed;
+            transform: none;
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .progress-bar-wrapper {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 30px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #5865F2, #7289da);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: 600;
+            font-size: 13px;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .status-message {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #4a5568;
         }
         
         .message {
             margin-top: 20px;
-            padding: 12px;
+            padding: 15px;
             border-radius: 8px;
             text-align: center;
             display: none;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .success {
             background: #c6f6d5;
             color: #2f855a;
-            border: 1px solid #9ae6b4;
+            border: 2px solid #9ae6b4;
         }
         
         .error {
             background: #fed7d7;
             color: #c53030;
-            border: 1px solid #fc8181;
+            border: 2px solid #fc8181;
         }
         
         .info {
             background: #bee3f8;
             color: #2c5282;
-            border: 1px solid #90cdf4;
+            border: 2px solid #90cdf4;
             font-size: 13px;
             margin-bottom: 20px;
+            padding: 12px;
+        }
+        
+        .file-info {
+            background: #f7fafc;
             padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 13px;
         }
         
-        .loading {
-            display: none;
-            text-align: center;
-            margin-top: 15px;
+        .file-info a {
+            color: #5865F2;
+            text-decoration: none;
+            word-break: break-all;
         }
         
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #5865F2;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
         }
         
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 22px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📤 رفع ملفات Discord</h1>
+        <h1>🚀 Discord File Uploader Pro</h1>
+        <div class="subtitle">Upload large files easily with advanced customization</div>
         
         <div class="info">
-            💡 هذه الخدمة تقوم بتحميل الملف من الرابط المباشر ورفعه إلى قناة Discord باستخدام حسابك<br>
-            ⚠️ استخدم توكن حسابك الشخصي (User Token) - احذر من مشاركته مع أحد
+            💡 Upload your files with full customization for name, message, and formatting
         </div>
         
         <form id="uploadForm">
+            <!-- Basic Discord Information -->
             <div class="form-group">
-                <label for="token">🔑 توكن الحساب (User Token):</label>
+                <label for="token">🔑 User Token <span class="required">*</span></label>
                 <input type="password" id="token" name="token" required 
-                       placeholder="ضع توكن حسابك هنا (ليس توكن البوت)">
+                       placeholder="Paste your user token here">
+                <div class="help-text">Get your token from Discord Developer Console (F12)</div>
             </div>
             
             <div class="form-group">
-                <label for="channel_id">📺 معرف القناة (Channel ID):</label>
+                <label for="channel_id">📺 Channel ID <span class="required">*</span></label>
                 <input type="text" id="channel_id" name="channel_id" required 
-                       placeholder="مثال: 123456789012345678">
+                       placeholder="Example: 123456789012345678">
+                <div class="help-text">Enable Developer Mode and right-click on channel</div>
+            </div>
+            
+            <!-- Send to User Option -->
+            <div class="toggle-section" onclick="toggleSection('dmSection')">
+                <div class="toggle-header">
+                    <span class="toggle-title">👤 Send to User (DM)</span>
+                    <span class="toggle-indicator">Optional</span>
+                </div>
+                <div class="toggle-content" id="dmSection">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="is_dm" name="is_dm">
+                        <label for="is_dm" style="margin: 0;">Send to User instead of Channel</label>
+                    </div>
+                    
+                    <div id="dmOptions" style="display: none;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="user_id">🆔 User ID</label>
+                            <input type="text" id="user_id" name="user_id" 
+                                   placeholder="Example: 123456789012345678">
+                            <div class="help-text">Right-click on user and select "Copy User ID"</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="form-group">
-                <label for="file_url">🔗 رابط الملف المباشر:</label>
+                <label for="file_url">🔗 Direct File URL <span class="required">*</span></label>
                 <input type="url" id="file_url" name="file_url" required 
                        placeholder="https://example.com/file.zip">
             </div>
             
-            <button type="submit" id="submitBtn">رفع الملف</button>
+            <!-- Custom Filename -->
+            <div class="form-group">
+                <label for="custom_filename">📝 Custom Filename (Optional)</label>
+                <input type="text" id="custom_filename" name="custom_filename" 
+                       placeholder="Example: my_file.zip">
+                <div class="help-text">Leave empty to use original filename</div>
+            </div>
             
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p style="margin-top: 10px; color: #4a5568;">جاري الرفع...</p>
+            <!-- Attached Message -->
+            <div class="toggle-section" onclick="toggleSection('messageSection')">
+                <div class="toggle-header">
+                    <span class="toggle-title">💬 Add Text Message</span>
+                    <span class="toggle-indicator">Optional</span>
+                </div>
+                <div class="toggle-content" id="messageSection">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <textarea id="message" name="message" 
+                                  placeholder="Write your message here... (optional)"></textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Embed Settings -->
+            <div class="toggle-section" onclick="toggleSection('embedSection')">
+                <div class="toggle-header">
+                    <span class="toggle-title">✨ Add Formatted Embed</span>
+                    <span class="toggle-indicator">Advanced</span>
+                </div>
+                <div class="toggle-content" id="embedSection">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="use_embed" name="use_embed">
+                        <label for="use_embed" style="margin: 0;">Enable Embed</label>
+                    </div>
+                    
+                    <div id="embedOptions" style="display: none;">
+                        <div class="form-group">
+                            <label for="embed_title">📌 Embed Title</label>
+                            <input type="text" id="embed_title" 
+                                   placeholder="Example: Important File">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="embed_description">📄 Embed Description</label>
+                            <textarea id="embed_description" 
+                                      placeholder="Write a description for the file..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="embed_color">🎨 Embed Color</label>
+                            <div class="color-picker-wrapper">
+                                <input type="color" id="embed_color" value="#5865F2">
+                                <div class="color-preview" id="colorPreview" style="background: #5865F2; color: white;">
+                                    #5865F2
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="embed_footer">👣 Embed Footer</label>
+                            <input type="text" id="embed_footer" 
+                                   placeholder="Example: Uploaded by...">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="embed_thumbnail">🖼️ Thumbnail Image URL</label>
+                            <input type="url" id="embed_thumbnail" 
+                                   placeholder="https://example.com/image.png">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" id="submitBtn">🚀 Upload File Now</button>
+            
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <div class="status-message" id="statusMessage">Preparing...</div>
             </div>
             
             <div class="message" id="message"></div>
@@ -176,24 +444,135 @@
     </div>
     
     <script>
+        let currentUploadId = null;
+        let statusCheckInterval = null;
+        
+        // Toggle sections
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            section.classList.toggle('active');
+        }
+        
+        // Color picker handler
+        document.getElementById('embed_color').addEventListener('input', (e) => {
+            const color = e.target.value;
+            const preview = document.getElementById('colorPreview');
+            preview.style.background = color;
+            preview.textContent = color.toUpperCase();
+        });
+        
+        // Embed checkbox handler
+        document.getElementById('use_embed').addEventListener('change', (e) => {
+            const embedOptions = document.getElementById('embedOptions');
+            embedOptions.style.display = e.target.checked ? 'block' : 'none';
+        });
+        
+        // DM checkbox handler
+        document.getElementById('is_dm').addEventListener('change', (e) => {
+            const dmOptions = document.getElementById('dmOptions');
+            const channelInput = document.getElementById('channel_id');
+            
+            if (e.target.checked) {
+                dmOptions.style.display = 'block';
+                channelInput.required = false;
+                channelInput.disabled = true;
+                channelInput.style.opacity = '0.5';
+                document.getElementById('user_id').required = true;
+            } else {
+                dmOptions.style.display = 'none';
+                channelInput.required = true;
+                channelInput.disabled = false;
+                channelInput.style.opacity = '1';
+                document.getElementById('user_id').required = false;
+            }
+        });
+        
+        // Check upload status
+        function checkStatus(uploadId) {
+            fetch(`/status/${uploadId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const progressBar = document.getElementById('progressBar');
+                    const progressText = document.getElementById('progressText');
+                    const statusMessage = document.getElementById('statusMessage');
+                    const messageDiv = document.getElementById('message');
+                    
+                    if (data.status === 'downloading') {
+                        progressBar.style.width = data.progress + '%';
+                        progressText.textContent = data.progress + '%';
+                        statusMessage.textContent = `Downloading... (${data.total_size} MB)`;
+                    } else if (data.status === 'uploading') {
+                        progressBar.style.width = '100%';
+                        progressText.textContent = '100%';
+                        statusMessage.textContent = 'Uploading to Discord...';
+                    } else if (data.status === 'completed') {
+                        clearInterval(statusCheckInterval);
+                        progressBar.style.width = '100%';
+                        progressText.textContent = '✓ Completed';
+                        statusMessage.textContent = '';
+                        
+                        messageDiv.className = 'message success';
+                        messageDiv.innerHTML = `
+                            ✅ ${data.message}<br>
+                            <div class="file-info">
+                                📊 File size: ${data.file_size} MB<br>
+                                🔗 <a href="${data.file_url}" target="_blank">View File</a>
+                            </div>
+                        `;
+                        messageDiv.style.display = 'block';
+                        
+                        document.getElementById('submitBtn').disabled = false;
+                        setTimeout(() => {
+                            document.getElementById('progressContainer').style.display = 'none';
+                        }, 2000);
+                    } else if (data.status === 'failed') {
+                        clearInterval(statusCheckInterval);
+                        document.getElementById('progressContainer').style.display = 'none';
+                        
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = '❌ ' + data.message;
+                        messageDiv.style.display = 'block';
+                        
+                        document.getElementById('submitBtn').disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking status:', error);
+                });
+        }
+        
+        // Form submission
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const submitBtn = document.getElementById('submitBtn');
-            const loading = document.getElementById('loading');
-            const message = document.getElementById('message');
+            const progressContainer = document.getElementById('progressContainer');
+            const messageDiv = document.getElementById('message');
+            const progressBar = document.getElementById('progressBar');
             
-            // إخفاء الرسائل السابقة
-            message.style.display = 'none';
-            
-            // تعطيل الزر وإظهار Loading
+            // Reset
+            messageDiv.style.display = 'none';
+            progressContainer.style.display = 'block';
             submitBtn.disabled = true;
-            loading.style.display = 'block';
+            progressBar.style.width = '0%';
+            
+            // Gather form data
+            const embedColor = document.getElementById('embed_color').value.replace('#', '');
             
             const data = {
                 token: document.getElementById('token').value,
                 channel_id: document.getElementById('channel_id').value,
-                file_url: document.getElementById('file_url').value
+                file_url: document.getElementById('file_url').value,
+                custom_filename: document.getElementById('custom_filename').value,
+                message: document.getElementById('message').value,
+                use_embed: document.getElementById('use_embed').checked,
+                embed_title: document.getElementById('embed_title').value,
+                embed_description: document.getElementById('embed_description').value,
+                embed_color: embedColor,
+                embed_footer: document.getElementById('embed_footer').value,
+                embed_thumbnail: document.getElementById('embed_thumbnail').value,
+                is_dm: document.getElementById('is_dm').checked,
+                user_id: document.getElementById('user_id').value
             };
             
             try {
@@ -207,23 +586,24 @@
                 
                 const result = await response.json();
                 
-                loading.style.display = 'none';
-                message.style.display = 'block';
-                
                 if (result.success) {
-                    message.className = 'message success';
-                    message.textContent = '✅ ' + result.message;
+                    currentUploadId = result.upload_id;
+                    statusCheckInterval = setInterval(() => {
+                        checkStatus(currentUploadId);
+                    }, 1000);
                 } else {
-                    message.className = 'message error';
-                    message.textContent = '❌ ' + result.message;
+                    progressContainer.style.display = 'none';
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = '❌ ' + result.message;
+                    messageDiv.style.display = 'block';
+                    submitBtn.disabled = false;
                 }
                 
             } catch (error) {
-                loading.style.display = 'none';
-                message.style.display = 'block';
-                message.className = 'message error';
-                message.textContent = '❌ حدث خطأ في الاتصال: ' + error.message;
-            } finally {
+                progressContainer.style.display = 'none';
+                messageDiv.className = 'message error';
+                messageDiv.textContent = '❌ Connection error: ' + error.message;
+                messageDiv.style.display = 'block';
                 submitBtn.disabled = false;
             }
         });
