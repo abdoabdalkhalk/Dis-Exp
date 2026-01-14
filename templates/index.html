@@ -89,7 +89,6 @@
             border-radius: 8px;
             margin-bottom: 20px;
             border: 2px dashed #cbd5e0;
-            cursor: pointer;
             transition: all 0.3s;
         }
         
@@ -102,6 +101,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
         }
         
         .toggle-title {
@@ -329,8 +330,8 @@
             </div>
             
             <!-- Send to User Option -->
-            <div class="toggle-section" onclick="toggleSection('dmSection')">
-                <div class="toggle-header">
+            <div class="toggle-section">
+                <div class="toggle-header" onclick="toggleSection('dmSection', event)">
                     <span class="toggle-title">👤 Send to User (DM)</span>
                     <span class="toggle-indicator">Optional</span>
                 </div>
@@ -366,8 +367,8 @@
             </div>
             
             <!-- Attached Message -->
-            <div class="toggle-section" onclick="toggleSection('messageSection')">
-                <div class="toggle-header">
+            <div class="toggle-section">
+                <div class="toggle-header" onclick="toggleSection('messageSection', event)">
                     <span class="toggle-title">💬 Add Text Message</span>
                     <span class="toggle-indicator">Optional</span>
                 </div>
@@ -380,8 +381,8 @@
             </div>
             
             <!-- Embed Settings -->
-            <div class="toggle-section" onclick="toggleSection('embedSection')">
-                <div class="toggle-header">
+            <div class="toggle-section">
+                <div class="toggle-header" onclick="toggleSection('embedSection', event)">
                     <span class="toggle-title">✨ Add Formatted Embed</span>
                     <span class="toggle-indicator">Advanced</span>
                 </div>
@@ -447,8 +448,13 @@
         let currentUploadId = null;
         let statusCheckInterval = null;
         
-        // Toggle sections
-        function toggleSection(sectionId) {
+        // Toggle sections - منع التنفيذ المزدوج
+        function toggleSection(sectionId, event) {
+            // منع الحدث من الانتشار للعناصر الداخلية
+            if (event) {
+                event.stopPropagation();
+            }
+            
             const section = document.getElementById(sectionId);
             section.classList.toggle('active');
         }
