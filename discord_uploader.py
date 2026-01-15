@@ -17,7 +17,7 @@ class StreamingFile:
         self.response = response
         self.filename = filename
         self.job_id = job_id
-        self.total_read = 0  # ✅ الإصلاح: تهيئة المتغير
+        self.total_read = 0
         self.last_log = time.time()
         
     def read(self, size=-1):
@@ -59,10 +59,13 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         }
         
         # فحص الحجم
+        head_response = None
+        total_size = 0
         try:
             head_response = requests.head(file_url, headers=headers, timeout=30, allow_redirects=True)
             total_size = int(head_response.headers.get('content-length', 0))
-        except:
+        except Exception as e:
+            print(f"[{job_id}] ⚠️ تحذير HEAD request: {e}")
             total_size = 0
         
         if total_size > 0:
@@ -82,9 +85,12 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         # الحصول على اسم الملف
         original_filename = file_url.split('/')[-1].split('?')[0]
         if not original_filename or '.' not in original_filename:
-            content_disp = head_response.headers.get('content-disposition', '') if total_size > 0 else ''
-            if 'filename=' in content_disp:
-                original_filename = content_disp.split('filename=')[-1].strip('"\'')
+            if head_response:
+                content_disp = head_response.headers.get('content-disposition', '')
+                if 'filename=' in content_disp:
+                    original_filename = content_disp.split('filename=')[-1].strip('"\'')
+                else:
+                    original_filename = 'file.bin'
             else:
                 original_filename = 'file.bin'
         
@@ -129,24 +135,35 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
-        # استخدام requests-toolbelt لو متاح، وإلا نستخدم الطريقة العادية
+        # استخدام requests-toolbelt لو متاح
         try:
             from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
             
             def monitor_callback(monitor):
-                mb = monitor.bytes_read / (1024*1024)
-                if monitor.len:
-                    progress = (monitor.bytes_read / monitor.len) * 100
-                    print(f"[{job_id}] 📊 {progress:.1f}% ({mb:.1f}MB)")
-                else:
-                    print(f"[{job_id}] 📊 {mb:.1f}MB")
-                
-                with jobs_lock:
-                    if job_id in jobs:
-                        jobs[job_id]['progress'] = f'رفع {mb:.0f}MB...'
-                        jobs[job_id]['last_update'] = time.time()
+                """تتبع التقدم - مع حماية من القيم None"""
+                try:
+                    # حماية من None values
+                    bytes_read = monitor.bytes_read if monitor.bytes_read is not None else 0
+                    total_len = monitor.len if monitor.len is not None else 0
+                    
+                    mb = bytes_read / (1024*1024)
+                    
+                    if total_len > 0:
+                        progress = (bytes_read / total_len) * 100
+                        print(f"[{job_id}] 📊 {progress:.1f}% ({mb:.1f}MB)")
+                    else:
+                        print(f"[{job_id}] 📊 {mb:.1f}MB")
+                    
+                    with jobs_lock:
+                        if job_id in jobs:
+                            jobs[job_id]['progress'] = f'رفع {mb:.0f}MB...'
+                            jobs[job_id]['last_update'] = time.time()
+                except Exception as e:
+                    print(f"[{job_id}] ⚠️ تحذير monitor: {e}")
             
-            encoder = MultipartEncoder(fields={'file': (filename, streaming_file, 'application/octet-stream')})
+            encoder = MultipartEncoder(
+                fields={'file': (filename, streaming_file, 'application/octet-stream')}
+            )
             monitor = MultipartEncoderMonitor(encoder, monitor_callback)
             
             discord_response = requests.post(
@@ -156,7 +173,17 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
                 timeout=None
             )
         except ImportError:
+            print(f"[{job_id}] ℹ️ requests-toolbelt غير متاح، استخدام الطريقة البسيطة")
             # الطريقة البسيطة بدون monitoring متقدم
+            discord_response = requests.post(
+                discord_url,
+                headers=discord_headers,
+                files={'file': (filename, streaming_file, 'application/octet-stream')},
+                timeout=None
+            )
+        except Exception as e:
+            print(f"[{job_id}] ⚠️ خطأ في MultipartEncoder، محاولة الطريقة البسيطة: {e}")
+            # Fallback للطريقة البسيطة
             discord_response = requests.post(
                 discord_url,
                 headers=discord_headers,
@@ -235,7 +262,7 @@ def upload():
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'message': 'بدء الرفع المباشر! (بدون استخدام ذاكرة كبيرة) 🚀'
+            'message': 'بدء الرفع المباشر! (استخدام ذاكرة منخفض جداً) 🚀'
         }), 200
         
     except Exception as e:
