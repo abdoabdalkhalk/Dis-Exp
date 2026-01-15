@@ -5,21 +5,53 @@ import time
 import uuid
 from threading import Thread, Lock
 import json
+import io
 
 app = Flask(__name__)
 
 jobs = {}
 jobs_lock = Lock()
 
-def download_and_upload(job_id, file_url, token, channel_id, custom_filename=None):
-    """تحميل الملف ورفعه إلى Discord - يعمل في الخلفية بالكامل"""
-    temp_file = None
+class StreamingFile:
+    """ملف وهمي يقرأ من الـ stream مباشرة"""
+    def __init__(self, response, filename, job_id):
+        self.response = response
+        self.filename = filename
+        self.job_id = job_id
+        self.total_read = 0
+        self.last_log = time.time()
+        
+    def read(self, size=-1):
+        """قراءة من الـ stream"""
+        try:
+            chunk = self.response.raw.read(size if size > 0 else 8192)
+            if chunk:
+                self.total_read += len(chunk)
+                
+                # تسجيل التقدم
+                now = time.time()
+                if now - self.last_log > 10:
+                    mb = self.total_read / (1024*1024)
+                    print(f"[{self.job_id}] 📤 تم رفع: {mb:.1f}MB")
+                    with jobs_lock:
+                        if self.job_id in jobs:
+                            jobs[self.job_id]['progress'] = f'رفع {mb:.0f}MB...'
+                            jobs[self.job_id]['last_update'] = now
+                    self.last_log = now
+            
+            return chunk
+        except Exception as e:
+            print(f"[{self.job_id}] ❌ خطأ في القراءة: {e}")
+            return b''
+
+def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filename=None):
+    """رفع streaming مباشر بدون حفظ الملف"""
     try:
         with jobs_lock:
-            jobs[job_id]['status'] = 'downloading'
-            jobs[job_id]['progress'] = 'بدء التحميل...'
+            jobs[job_id]['status'] = 'checking'
+            jobs[job_id]['progress'] = 'فحص الملف...'
         
-        print(f"[{job_id}] 🚀 بدء التحميل من: {file_url}")
+        print(f"[{job_id}] 🔍 فحص: {file_url}")
         
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -27,7 +59,7 @@ def download_and_upload(job_id, file_url, token, channel_id, custom_filename=Non
             'Connection': 'keep-alive'
         }
         
-        # فحص حجم الملف
+        # فحص الحجم
         try:
             head_response = requests.head(file_url, headers=headers, timeout=30, allow_redirects=True)
             total_size = int(head_response.headers.get('content-length', 0))
@@ -36,33 +68,22 @@ def download_and_upload(job_id, file_url, token, channel_id, custom_filename=Non
         
         if total_size > 0:
             size_mb = total_size / (1024*1024)
-            print(f"[{job_id}] 📦 حجم الملف: {size_mb:.2f} MB")
-            with jobs_lock:
-                jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f} MB'
+            print(f"[{job_id}] 📦 حجم: {size_mb:.2f} MB")
             
-            # التحقق من الحد الأقصى
-            max_size = 500 * 1024 * 1024
-            if total_size > max_size:
+            # تحقق من الحد الأقصى
+            if size_mb > 500:
                 with jobs_lock:
                     jobs[job_id]['status'] = 'failed'
-                    jobs[job_id]['message'] = f'❌ الملف كبير جداً ({size_mb:.1f}MB). الحد الأقصى 500MB'
+                    jobs[job_id]['message'] = f'❌ الملف كبير ({size_mb:.1f}MB). الحد الأقصى 500MB'
                 return
-        
-        # تحميل الملف بدون timeout
-        print(f"[{job_id}] ⬇️ بدء التحميل الفعلي...")
-        response = requests.get(
-            file_url, 
-            headers=headers, 
-            stream=True, 
-            timeout=None,
-            allow_redirects=True
-        )
-        response.raise_for_status()
+            
+            with jobs_lock:
+                jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f}MB'
         
         # الحصول على اسم الملف
         original_filename = file_url.split('/')[-1].split('?')[0]
         if not original_filename or '.' not in original_filename:
-            content_disp = response.headers.get('content-disposition', '')
+            content_disp = head_response.headers.get('content-disposition', '') if total_size > 0 else ''
             if 'filename=' in content_disp:
                 original_filename = content_disp.split('filename=')[-1].strip('"\'')
             else:
@@ -80,123 +101,80 @@ def download_and_upload(job_id, file_url, token, channel_id, custom_filename=Non
         else:
             filename = original_filename
         
-        print(f"[{job_id}] 📄 اسم الملف: {filename}")
+        print(f"[{job_id}] 📄 اسم: {filename}")
         
-        # حفظ الملف
-        temp_file = f'/tmp/{job_id}_{filename}'
-        
-        if total_size == 0:
-            total_size = int(response.headers.get('content-length', 0))
-        
-        downloaded = 0
-        start_time = time.time()
-        last_log = time.time()
-        chunk_size = 8 * 1024 * 1024  # 8MB chunks
-        
-        with open(temp_file, 'wb', buffering=chunk_size) as f:
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    
-                    now = time.time()
-                    if now - last_log > 10:  # تحديث كل 10 ثواني
-                        downloaded_mb = downloaded / (1024*1024)
-                        if total_size > 0:
-                            progress = (downloaded / total_size) * 100
-                            print(f"[{job_id}] 📊 تقدم: {progress:.1f}% ({downloaded_mb:.1f}MB)")
-                            with jobs_lock:
-                                jobs[job_id]['progress'] = f'التحميل: {progress:.0f}%'
-                                jobs[job_id]['last_update'] = now
-                        else:
-                            print(f"[{job_id}] 📊 تم تحميل: {downloaded_mb:.1f}MB")
-                            with jobs_lock:
-                                jobs[job_id]['progress'] = f'تم تحميل: {downloaded_mb:.0f}MB'
-                                jobs[job_id]['last_update'] = now
-                        last_log = now
-            
-            f.flush()
-            os.fsync(f.fileno())
-        
-        download_time = time.time() - start_time
-        actual_size = os.path.getsize(temp_file)
-        
-        print(f"[{job_id}] ✅ انتهى التحميل في {download_time/60:.1f} دقيقة")
-        print(f"[{job_id}] 📏 الحجم الفعلي: {actual_size/(1024*1024):.2f} MB")
-        
-        # التحقق من الملف
-        if actual_size == 0:
-            try:
-                os.remove(temp_file)
-            except:
-                pass
-            with jobs_lock:
-                jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = '❌ الملف فارغ!'
-            return
-        
-        if total_size > 0 and actual_size < total_size * 0.95:
-            try:
-                os.remove(temp_file)
-            except:
-                pass
-            with jobs_lock:
-                jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = '❌ التحميل غير مكتمل!'
-            return
-        
-        # الرفع إلى Discord
+        # بدء الـ streaming
         with jobs_lock:
             jobs[job_id]['status'] = 'uploading'
-            jobs[job_id]['progress'] = f'رفع {actual_size/(1024*1024):.0f}MB إلى Discord...'
+            jobs[job_id]['progress'] = 'بدء الرفع المباشر...'
             jobs[job_id]['last_update'] = time.time()
         
-        print(f"[{job_id}] ⬆️ بدء الرفع إلى Discord...")
+        print(f"[{job_id}] 🚀 بدء streaming upload...")
         
+        start_time = time.time()
+        
+        # فتح stream من الرابط
+        file_response = requests.get(
+            file_url,
+            headers=headers,
+            stream=True,
+            timeout=None,
+            allow_redirects=True
+        )
+        file_response.raise_for_status()
+        
+        # إنشاء ملف streaming
+        streaming_file = StreamingFile(file_response, filename, job_id)
+        
+        # رفع مباشر لـ Discord
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
-        upload_start = time.time()
-        
-        # رفع مع تحديث دوري للحالة
-        with open(temp_file, 'rb') as f:
-            files = {'file': (filename, f)}
+        # استخدام requests-toolbelt لو متاح، وإلا نستخدم الطريقة العادية
+        try:
+            from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
             
-            # تشغيل thread لتحديث الحالة أثناء الرفع
-            def update_upload_status():
-                while True:
-                    time.sleep(15)
-                    with jobs_lock:
-                        if job_id not in jobs or jobs[job_id]['status'] != 'uploading':
-                            break
+            def monitor_callback(monitor):
+                mb = monitor.bytes_read / (1024*1024)
+                if monitor.len:
+                    progress = (monitor.bytes_read / monitor.len) * 100
+                    print(f"[{job_id}] 📊 {progress:.1f}% ({mb:.1f}MB)")
+                else:
+                    print(f"[{job_id}] 📊 {mb:.1f}MB")
+                
+                with jobs_lock:
+                    if job_id in jobs:
+                        jobs[job_id]['progress'] = f'رفع {mb:.0f}MB...'
                         jobs[job_id]['last_update'] = time.time()
             
-            status_thread = Thread(target=update_upload_status, daemon=True)
-            status_thread.start()
+            encoder = MultipartEncoder(fields={'file': (filename, streaming_file, 'application/octet-stream')})
+            monitor = MultipartEncoderMonitor(encoder, monitor_callback)
             
             discord_response = requests.post(
-                discord_url, 
-                headers=discord_headers, 
-                files=files,
+                discord_url,
+                headers={**discord_headers, 'Content-Type': monitor.content_type},
+                data=monitor,
+                timeout=None
+            )
+        except ImportError:
+            # الطريقة البسيطة بدون monitoring متقدم
+            discord_response = requests.post(
+                discord_url,
+                headers=discord_headers,
+                files={'file': (filename, streaming_file, 'application/octet-stream')},
                 timeout=None
             )
         
-        upload_time = time.time() - upload_start
-        print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
+        upload_time = time.time() - start_time
+        uploaded_mb = streaming_file.total_read / (1024*1024)
         
-        # حذف الملف
-        try:
-            os.remove(temp_file)
-            print(f"[{job_id}] 🗑️ تم حذف الملف المؤقت")
-            temp_file = None
-        except:
-            pass
+        print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
+        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB")
         
         if discord_response.status_code == 200:
-            total_time = time.time() - start_time
             with jobs_lock:
                 jobs[job_id]['status'] = 'completed'
-                jobs[job_id]['message'] = f'✅ تم رفع "{filename}" ({actual_size/(1024*1024):.1f}MB) في {total_time/60:.1f} دقيقة!'
+                jobs[job_id]['message'] = f'✅ تم رفع "{filename}" ({uploaded_mb:.1f}MB) في {upload_time/60:.1f} دقيقة!'
                 jobs[job_id]['progress'] = 'اكتمل!'
                 jobs[job_id]['last_update'] = time.time()
             print(f"[{job_id}] 🎉 SUCCESS!")
@@ -205,7 +183,7 @@ def download_and_upload(job_id, file_url, token, channel_id, custom_filename=Non
             with jobs_lock:
                 jobs[job_id]['status'] = 'failed'
                 jobs[job_id]['message'] = f'❌ خطأ Discord ({discord_response.status_code}): {error_data}'
-            print(f"[{job_id}] ❌ Discord error: {error_data}")
+            print(f"[{job_id}] ❌ Discord: {error_data}")
             
     except Exception as e:
         with jobs_lock:
@@ -214,12 +192,6 @@ def download_and_upload(job_id, file_url, token, channel_id, custom_filename=Non
         print(f"[{job_id}] ❌ Error: {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        if temp_file and os.path.exists(temp_file):
-            try:
-                os.remove(temp_file)
-            except:
-                pass
 
 @app.route('/')
 def index():
@@ -231,7 +203,7 @@ def health():
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    """بدء عملية الرفع - رد فوري"""
+    """بدء عملية الرفع"""
     try:
         data = request.json
         file_url = data.get('file_url')
@@ -242,7 +214,6 @@ def upload():
         if not all([file_url, token, channel_id]):
             return jsonify({'success': False, 'message': 'جميع الحقول مطلوبة'}), 400
         
-        # إنشاء Job
         job_id = str(uuid.uuid4())[:8]
         with jobs_lock:
             jobs[job_id] = {
@@ -253,67 +224,55 @@ def upload():
                 'last_update': time.time()
             }
         
-        # تشغيل في الخلفية
         thread = Thread(
-            target=download_and_upload, 
+            target=stream_upload_to_discord,
             args=(job_id, file_url, token, channel_id, custom_filename)
         )
         thread.daemon = True
         thread.start()
         
-        print(f"[{job_id}] 🎬 Job created and started in background")
+        print(f"[{job_id}] 🎬 Job started (STREAMING MODE)")
         
-        # رد فوري للمستخدم
         return jsonify({
-            'success': True, 
+            'success': True,
             'job_id': job_id,
-            'message': 'تم بدء الرفع! يعمل الآن في الخلفية 🚀'
+            'message': 'بدء الرفع المباشر! (بدون استخدام ذاكرة كبيرة) 🚀'
         }), 200
         
     except Exception as e:
-        print(f"❌ Error in /upload: {e}")
+        print(f"❌ Error: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/status/<job_id>')
 def status(job_id):
-    """التحقق من حالة Job"""
     with jobs_lock:
         if job_id not in jobs:
             return jsonify({'status': 'not_found'}), 404
-        
         job_data = jobs[job_id].copy()
-    
     return jsonify(job_data)
 
 @app.route('/jobs')
 def list_jobs():
-    """عرض كل Jobs (للمراقبة)"""
     with jobs_lock:
-        active_count = sum(1 for j in jobs.values() if j['status'] in ['queued', 'downloading', 'uploading'])
+        active = sum(1 for j in jobs.values() if j['status'] in ['queued', 'checking', 'uploading'])
         jobs_copy = {k: v.copy() for k, v in jobs.items()}
-    
     return jsonify({
         'total': len(jobs_copy),
-        'active': active_count,
+        'active': active,
         'jobs': jobs_copy,
         'timestamp': time.time()
     })
 
 @app.route('/keep-alive')
 def keep_alive():
-    """نقطة نهاية لإبقاء الاتصال حي"""
     def generate():
-        """إرسال heartbeat كل 20 ثانية"""
         try:
-            for i in range(300):  # 100 دقيقة كحد أقصى
+            for i in range(300):
                 with jobs_lock:
                     active_jobs = {
-                        k: {
-                            'status': v['status'],
-                            'progress': v['progress']
-                        }
-                        for k, v in jobs.items() 
-                        if v['status'] in ['queued', 'downloading', 'uploading']
+                        k: {'status': v['status'], 'progress': v['progress']}
+                        for k, v in jobs.items()
+                        if v['status'] in ['queued', 'checking', 'uploading']
                     }
                 
                 data = {
@@ -324,7 +283,6 @@ def keep_alive():
                 
                 yield f"data: {json.dumps(data)}\n\n"
                 
-                # توقف إذا لا توجد عمليات نشطة
                 if not active_jobs:
                     break
                 
@@ -342,22 +300,16 @@ def keep_alive():
         }
     )
 
-# تنظيف Jobs القديمة
 def cleanup_old_jobs():
-    """حذف Jobs القديمة (أكثر من ساعة)"""
     while True:
-        time.sleep(300)  # كل 5 دقائق
+        time.sleep(300)
         now = time.time()
         with jobs_lock:
-            old_jobs = [
-                job_id for job_id, job in jobs.items()
-                if now - job.get('last_update', job['created_at']) > 3600
-            ]
-            for job_id in old_jobs:
-                del jobs[job_id]
-                print(f"🗑️ Cleaned up old job: {job_id}")
+            old = [j for j, d in jobs.items() if now - d.get('last_update', d['created_at']) > 3600]
+            for j in old:
+                del jobs[j]
+                print(f"🗑️ Cleaned: {j}")
 
-# تشغيل منظف الخلفية
 cleanup_thread = Thread(target=cleanup_old_jobs, daemon=True)
 cleanup_thread.start()
 
