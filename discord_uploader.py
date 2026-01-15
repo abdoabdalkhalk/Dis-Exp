@@ -19,11 +19,14 @@ class StreamingFile:
         self.job_id = job_id
         self.total_read = 0
         self.last_log = time.time()
+        self.chunk_size = 8192
         
     def read(self, size=-1):
         """قراءة من الـ stream"""
         try:
-            chunk = self.response.raw.read(size if size > 0 else 8192)
+            read_size = size if size > 0 else self.chunk_size
+            chunk = self.response.raw.read(read_size)
+            
             if chunk:
                 self.total_read += len(chunk)
                 
@@ -42,6 +45,17 @@ class StreamingFile:
         except Exception as e:
             print(f"[{self.job_id}] ❌ خطأ في القراءة: {e}")
             return b''
+    
+    def __iter__(self):
+        """للسماح بـ iteration على الـ stream"""
+        return self
+    
+    def __next__(self):
+        """قراءة chunk تلو الآخر"""
+        chunk = self.read(self.chunk_size)
+        if not chunk:
+            raise StopIteration
+        return chunk
 
 def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filename=None):
     """رفع streaming مباشر بدون حفظ الملف"""
@@ -135,21 +149,53 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
-        # استخدام الطريقة البسيطة مباشرة (أكثر استقراراً)
-        print(f"[{job_id}] 📤 استخدام Simple Upload (أكثر استقراراً)")
+        # استخدام iter_content مباشرة (الطريقة الأكثر موثوقية)
+        print(f"[{job_id}] 📤 استخدام iter_content للرفع المباشر")
+        
+        # إنشاء generator يقرأ ويتتبع التقدم
+        def file_generator():
+            total_read = 0
+            last_log = time.time()
+            for chunk in file_response.iter_content(chunk_size=8192):
+                if chunk:
+                    total_read += len(chunk)
+                    
+                    # تسجيل التقدم كل 10 ثواني
+                    now = time.time()
+                    if now - last_log > 10:
+                        mb = total_read / (1024*1024)
+                        print(f"[{job_id}] 📤 تم رفع: {mb:.1f}MB")
+                        with jobs_lock:
+                            if job_id in jobs:
+                                jobs[job_id]['progress'] = f'رفع {mb:.0f}MB...'
+                                jobs[job_id]['last_update'] = now
+                        last_log = now
+                    
+                    yield chunk
         
         discord_response = requests.post(
             discord_url,
             headers=discord_headers,
-            files={'file': (filename, streaming_file, 'application/octet-stream')},
+            files={'file': (filename, file_generator(), 'application/octet-stream')},
             timeout=None
         )
         
         upload_time = time.time() - start_time
-        uploaded_mb = streaming_file.total_read / (1024*1024)
+        
+        # حساب الحجم المرفوع من file_response
+        uploaded_mb = 0
+        if hasattr(file_response, 'raw') and hasattr(file_response.raw, 'tell'):
+            try:
+                uploaded_mb = file_response.raw.tell() / (1024*1024)
+            except:
+                pass
+        
+        # إذا لم نستطع الحصول على الحجم من raw، نستخدم total_size
+        if uploaded_mb == 0 and total_size > 0:
+            uploaded_mb = total_size / (1024*1024)
         
         print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
-        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB")
+        print(f"[{job_id}] 📊 حجم الملف: {uploaded_mb:.1f}MB")
         
         if discord_response.status_code == 200:
             with jobs_lock:
