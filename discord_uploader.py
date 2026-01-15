@@ -5,67 +5,87 @@ import time
 import uuid
 from threading import Thread, Lock
 import json
+import io
 
 app = Flask(__name__)
 
 jobs = {}
 jobs_lock = Lock()
 
-class StreamingFile:
-    """ملف وهمي يقرأ من الـ stream مباشرة"""
-    def __init__(self, response, job_id):
+class ChunkedUploadWrapper:
+    """Wrapper يحاكي ملف عادي لكن يقرأ chunks من stream"""
+    def __init__(self, response, total_size, job_id):
         self.response = response
+        self.total_size = total_size
         self.job_id = job_id
         self.total_read = 0
         self.last_log = time.time()
         self.iterator = response.iter_content(chunk_size=8192)
+        self.buffer = b''
+        self.finished = False
         
     def read(self, size=-1):
-        """قراءة من الـ stream - مطلوبة لـ requests"""
+        """قراءة البيانات"""
+        if self.finished and not self.buffer:
+            return b''
+        
         try:
-            # إذا طُلب حجم محدد، نقرأ chunks حتى نصل له
-            if size and size > 0:
-                data = b''
-                while len(data) < size:
+            # إذا طُلب حجم محدد
+            if size is not None and size > 0:
+                # نملأ الـ buffer حتى نصل للحجم المطلوب
+                while len(self.buffer) < size and not self.finished:
                     try:
                         chunk = next(self.iterator)
-                        if not chunk:
-                            break
-                        data += chunk
-                        self.total_read += len(chunk)
+                        if chunk:
+                            self.buffer += chunk
                     except StopIteration:
+                        self.finished = True
                         break
                 
-                # تحديث التقدم
-                self._update_progress()
-                return data[:size] if data else b''
-            else:
-                # قراءة chunk واحد
-                try:
-                    chunk = next(self.iterator)
-                    if chunk:
-                        self.total_read += len(chunk)
-                        self._update_progress()
-                        return chunk
-                except StopIteration:
-                    pass
-                return b''
+                # نأخذ الحجم المطلوب من الـ buffer
+                result = self.buffer[:size]
+                self.buffer = self.buffer[size:]
                 
+            else:
+                # قراءة كل ما تبقى
+                while not self.finished:
+                    try:
+                        chunk = next(self.iterator)
+                        if chunk:
+                            self.buffer += chunk
+                    except StopIteration:
+                        self.finished = True
+                        break
+                
+                result = self.buffer
+                self.buffer = b''
+            
+            # تحديث العداد
+            if result:
+                self.total_read += len(result)
+                self._log_progress()
+            
+            return result
+            
         except Exception as e:
-            print(f"[{self.job_id}] ❌ خطأ في القراءة: {e}")
+            print(f"[{self.job_id}] ❌ خطأ في read: {e}")
             return b''
     
-    def _update_progress(self):
-        """تحديث التقدم كل 10 ثواني"""
+    def _log_progress(self):
+        """تسجيل التقدم"""
         now = time.time()
         if now - self.last_log > 10:
             mb = self.total_read / (1024*1024)
-            print(f"[{self.job_id}] 📤 تم رفع: {mb:.1f}MB")
+            print(f"[{self.job_id}] 📤 رفع: {mb:.1f}MB")
             with jobs_lock:
                 if self.job_id in jobs:
                     jobs[self.job_id]['progress'] = f'رفع {mb:.0f}MB...'
                     jobs[self.job_id]['last_update'] = now
             self.last_log = now
+    
+    def __len__(self):
+        """إرجاع الحجم الكلي - مهم جداً!"""
+        return self.total_size if self.total_size > 0 else 0
 
 def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filename=None):
     """رفع streaming مباشر بدون حفظ الملف"""
@@ -82,7 +102,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
             'Connection': 'keep-alive'
         }
         
-        # فحص الحجم
+        # فحص الحجم - مهم جداً!
         head_response = None
         total_size = 0
         try:
@@ -90,21 +110,32 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
             total_size = int(head_response.headers.get('content-length', 0))
         except Exception as e:
             print(f"[{job_id}] ⚠️ تحذير HEAD request: {e}")
-            total_size = 0
+            # محاولة GET بدلاً من HEAD
+            try:
+                test_response = requests.get(file_url, headers=headers, stream=True, timeout=10)
+                total_size = int(test_response.headers.get('content-length', 0))
+                test_response.close()
+            except:
+                total_size = 0
         
-        if total_size > 0:
-            size_mb = total_size / (1024*1024)
-            print(f"[{job_id}] 📦 حجم: {size_mb:.2f} MB")
-            
-            # تحقق من الحد الأقصى
-            if size_mb > 500:
-                with jobs_lock:
-                    jobs[job_id]['status'] = 'failed'
-                    jobs[job_id]['message'] = f'❌ الملف كبير ({size_mb:.1f}MB). الحد الأقصى 500MB'
-                return
-            
+        if total_size == 0:
             with jobs_lock:
-                jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f}MB'
+                jobs[job_id]['status'] = 'failed'
+                jobs[job_id]['message'] = '❌ لا يمكن تحديد حجم الملف! تأكد أن الرابط مباشر'
+            return
+        
+        size_mb = total_size / (1024*1024)
+        print(f"[{job_id}] 📦 حجم: {size_mb:.2f} MB")
+        
+        # تحقق من الحد الأقصى
+        if size_mb > 500:
+            with jobs_lock:
+                jobs[job_id]['status'] = 'failed'
+                jobs[job_id]['message'] = f'❌ الملف كبير ({size_mb:.1f}MB). الحد الأقصى 500MB'
+            return
+        
+        with jobs_lock:
+            jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f}MB'
         
         # الحصول على اسم الملف
         original_filename = file_url.split('/')[-1].split('?')[0]
@@ -152,27 +183,27 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         )
         file_response.raise_for_status()
         
-        # إنشاء ملف streaming
-        streaming_file = StreamingFile(file_response, job_id)
+        # إنشاء wrapper
+        file_wrapper = ChunkedUploadWrapper(file_response, total_size, job_id)
         
         # رفع مباشر لـ Discord
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
-        print(f"[{job_id}] 📤 بدء الرفع الـ streaming...")
+        print(f"[{job_id}] 📤 بدء الرفع...")
         
         discord_response = requests.post(
             discord_url,
             headers=discord_headers,
-            files={'file': (filename, streaming_file, 'application/octet-stream')},
+            files={'file': (filename, file_wrapper, 'application/octet-stream')},
             timeout=None
         )
         
         upload_time = time.time() - start_time
-        uploaded_mb = streaming_file.total_read / (1024*1024)
+        uploaded_mb = file_wrapper.total_read / (1024*1024)
         
         print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
-        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB")
+        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB من {size_mb:.1f}MB")
         
         if discord_response.status_code == 200:
             with jobs_lock:
