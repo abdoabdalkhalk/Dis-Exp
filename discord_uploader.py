@@ -5,7 +5,6 @@ import time
 import uuid
 from threading import Thread, Lock
 import json
-import io
 
 app = Flask(__name__)
 
@@ -18,7 +17,7 @@ class StreamingFile:
         self.response = response
         self.filename = filename
         self.job_id = job_id
-        self.total_read = 0
+        self.total_read = 0  # ✅ الإصلاح: تهيئة المتغير
         self.last_log = time.time()
         
     def read(self, size=-1):
@@ -28,7 +27,7 @@ class StreamingFile:
             if chunk:
                 self.total_read += len(chunk)
                 
-                # تسجيل التقدم
+                # تسجيل التقدم كل 10 ثواني
                 now = time.time()
                 if now - self.last_log > 10:
                     mb = self.total_read / (1024*1024)
@@ -301,8 +300,9 @@ def keep_alive():
     )
 
 def cleanup_old_jobs():
+    """تنظيف الـ jobs القديمة"""
     while True:
-        time.sleep(300)
+        time.sleep(300)  # كل 5 دقائق
         now = time.time()
         with jobs_lock:
             old = [j for j, d in jobs.items() if now - d.get('last_update', d['created_at']) > 3600]
