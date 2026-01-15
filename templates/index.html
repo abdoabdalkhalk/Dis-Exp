@@ -153,6 +153,34 @@
             font-size: 14px;
             color: #2d3748;
         }
+        
+        .live-status {
+            background: #f0f4ff;
+            border: 2px solid #a0c4ff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .live-status.active {
+            display: block;
+        }
+        
+        .status-pulse {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #48bb78;
+            border-radius: 50%;
+            margin-left: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -201,10 +229,67 @@
             <button type="submit" id="submitBtn">🚀 رفع الملف</button>
             
             <div class="message" id="message"></div>
+            
+            <div class="live-status" id="liveStatus">
+                <strong>
+                    <span class="status-pulse"></span>
+                    حالة مباشرة:
+                </strong>
+                <div id="statusText" style="margin-top: 8px; font-size: 14px;"></div>
+            </div>
         </form>
     </div>
     
     <script>
+        let eventSource = null;
+        let currentJobId = null;
+        
+        function startLiveTracking(jobId) {
+            currentJobId = jobId;
+            
+            // إغلاق الاتصال السابق إن وجد
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            // بدء اتصال keep-alive
+            eventSource = new EventSource('/keep-alive');
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // عرض حالة الـ job الحالي
+                    if (data.jobs && data.jobs[jobId]) {
+                        const job = data.jobs[jobId];
+                        document.getElementById('statusText').textContent = 
+                            `${job.status === 'downloading' ? '⬇️' : '⬆️'} ${job.progress}`;
+                        document.getElementById('liveStatus').classList.add('active');
+                    } else if (data.active_jobs === 0) {
+                        // انتهت العملية
+                        document.getElementById('statusText').textContent = '✅ اكتملت العملية!';
+                        setTimeout(() => {
+                            document.getElementById('liveStatus').classList.remove('active');
+                            if (eventSource) {
+                                eventSource.close();
+                                eventSource = null;
+                            }
+                        }, 3000);
+                    }
+                } catch (e) {
+                    console.error('Error parsing event:', e);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.log('EventSource connection ended');
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+            };
+        }
+        
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -213,6 +298,7 @@
             
             // إخفاء الرسائل السابقة
             message.style.display = 'none';
+            document.getElementById('liveStatus').classList.remove('active');
             
             // تعطيل الزر مؤقتاً
             submitBtn.disabled = true;
@@ -247,6 +333,9 @@
                     `;
                     message.style.display = 'block';
                     
+                    // بدء التتبع المباشر
+                    startLiveTracking(result.job_id);
+                    
                     // مسح النموذج
                     document.getElementById('file_url').value = '';
                     document.getElementById('custom_filename').value = '';
@@ -263,6 +352,13 @@
                 // إعادة تفعيل الزر
                 submitBtn.disabled = false;
                 submitBtn.textContent = '🚀 رفع الملف';
+            }
+        });
+        
+        // تنظيف عند إغلاق الصفحة
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
             }
         });
     </script>
