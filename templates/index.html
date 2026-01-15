@@ -62,20 +62,6 @@
             border-color: #5865F2;
         }
         
-        .file-info {
-            margin-top: 8px;
-            padding: 10px;
-            background: #f7fafc;
-            border-radius: 6px;
-            font-size: 13px;
-            color: #4a5568;
-            display: none;
-        }
-        
-        .file-info.show { display: block; }
-        
-        .file-info strong { color: #2d3748; }
-        
         button {
             width: 100%;
             padding: 14px;
@@ -86,100 +72,86 @@
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s;
             margin-top: 10px;
         }
         
-        button:hover { background: #4752c4; }
+        button:hover { 
+            background: #4752c4;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(88, 101, 242, 0.4);
+        }
+        
         button:disabled {
             background: #cbd5e0;
             cursor: not-allowed;
+            transform: none;
         }
         
         .message {
             margin-top: 20px;
-            padding: 12px;
+            padding: 15px;
             border-radius: 8px;
             text-align: center;
             display: none;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .success {
             background: #c6f6d5;
             color: #2f855a;
-            border: 1px solid #9ae6b4;
-        }
-        
-        .error {
-            background: #fed7d7;
-            color: #c53030;
-            border: 1px solid #fc8181;
+            border: 2px solid #9ae6b4;
         }
         
         .info {
             background: #bee3f8;
             color: #2c5282;
-            border: 1px solid #90cdf4;
-            font-size: 13px;
-            margin-bottom: 20px;
-            padding: 10px;
-            line-height: 1.6;
+            border: 2px solid #90cdf4;
         }
         
-        .loading {
-            display: none;
-            text-align: center;
-            margin-top: 15px;
-            padding: 20px;
-            background: #f7fafc;
+        .warning {
+            background: #feebc8;
+            color: #c05621;
+            border: 2px solid #fbd38d;
+        }
+        
+        .alert-box {
+            background: #e6fffa;
+            border: 2px solid #81e6d9;
             border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #234e52;
         }
         
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #5865F2;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        
-        .progress-text {
-            margin-top: 15px;
-            color: #2d3748;
+        .alert-box strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #1a365d;
             font-size: 15px;
-            font-weight: 600;
         }
         
-        .progress-detail {
-            margin-top: 8px;
-            color: #718096;
-            font-size: 13px;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
+        .hint {
             font-size: 12px;
-            font-weight: 600;
+            color: #718096;
+            margin-top: 5px;
+        }
+        
+        .job-id {
+            background: #f7fafc;
+            padding: 10px;
+            border-radius: 6px;
             margin-top: 10px;
-        }
-        
-        .status-downloading {
-            background: #bee3f8;
-            color: #2c5282;
-        }
-        
-        .status-uploading {
-            background: #fbd38d;
-            color: #7c2d12;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            font-family: monospace;
+            font-size: 14px;
+            color: #2d3748;
         }
     </style>
 </head>
@@ -187,11 +159,14 @@
     <div class="container">
         <h1>📤 رافع ملفات Discord</h1>
         
-        <div class="info">
-            ✅ يستخدم نت السيرفر (سريع)<br>
-            ⚠️ لا تشارك توكن حسابك<br>
-            ⏱️ الملفات الكبيرة (300MB+) تستغرق 5-15 دقيقة<br>
-            💡 يمكنك إغلاق الصفحة والعودة - العملية تعمل في الخلفية
+        <div class="alert-box">
+            <strong>🚀 يعمل في الخلفية!</strong>
+            بعد الضغط على "رفع الملف"، يمكنك:<br>
+            ✅ إغلاق الصفحة<br>
+            ✅ إغلاق المتصفح<br>
+            ✅ إيقاف جهازك<br>
+            <br>
+            السيرفر سيكمل الرفع تلقائياً! 🎯
         </div>
         
         <form id="uploadForm">
@@ -211,10 +186,6 @@
                 <label for="file_url">🔗 رابط الملف المباشر:</label>
                 <input type="url" id="file_url" required 
                        placeholder="https://example.com/file.zip">
-                <div class="file-info" id="fileInfo">
-                    <strong>الامتداد المكتشف:</strong> <span id="detectedExt">-</span><br>
-                    <small>سيتم الحفاظ على هذا الامتداد تلقائياً</small>
-                </div>
             </div>
             
             <div class="form-group">
@@ -223,160 +194,29 @@
                     <span class="label-optional">(اختياري)</span>
                 </label>
                 <input type="text" id="custom_filename" 
-                       placeholder="مثال: my-video (بدون امتداد)">
-                <small style="color: #718096; font-size: 12px; margin-top: 5px; display: block;">
-                    اتركه فارغاً للحفاظ على الاسم الأصلي
-                </small>
+                       placeholder="my-video (بدون امتداد)">
+                <div class="hint">اتركه فارغاً للحفاظ على الاسم الأصلي</div>
             </div>
             
-            <button type="submit" id="submitBtn">ابدأ الرفع</button>
-            
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p class="progress-text" id="statusText">جاري الإعداد...</p>
-                <p class="progress-detail" id="progressText"></p>
-                <span class="status-badge" id="statusBadge"></span>
-            </div>
+            <button type="submit" id="submitBtn">🚀 رفع الملف</button>
             
             <div class="message" id="message"></div>
         </form>
     </div>
     
     <script>
-        let checkInterval = null;
-        let currentJobId = null;
-        let failedChecks = 0;
-        const MAX_FAILED_CHECKS = 10; // زيادة الحد للسماح بمزيد من المحاولات
-        
-        // كشف الامتداد عند تغيير رابط الملف
-        document.getElementById('file_url').addEventListener('input', function() {
-            const url = this.value.trim();
-            const fileInfo = document.getElementById('fileInfo');
-            const detectedExt = document.getElementById('detectedExt');
-            
-            if (url) {
-                const filename = url.split('/').pop().split('?')[0];
-                if (filename.includes('.')) {
-                    const ext = '.' + filename.split('.').pop();
-                    detectedExt.textContent = ext;
-                    fileInfo.classList.add('show');
-                } else {
-                    detectedExt.textContent = 'غير معروف';
-                    fileInfo.classList.add('show');
-                }
-            } else {
-                fileInfo.classList.remove('show');
-            }
-        });
-        
-        async function checkStatus(jobId) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 ثواني timeout
-                
-                const response = await fetch(`/status/${jobId}`, {
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const status = await response.json();
-                
-                // إعادة تعيين عداد الفشل عند النجاح
-                failedChecks = 0;
-                
-                const statusText = document.getElementById('statusText');
-                const progressText = document.getElementById('progressText');
-                const statusBadge = document.getElementById('statusBadge');
-                const loading = document.getElementById('loading');
-                const message = document.getElementById('message');
-                const submitBtn = document.getElementById('submitBtn');
-                
-                // تحديث التقدم
-                if (status.progress) {
-                    progressText.textContent = status.progress;
-                }
-                
-                // تحديث الحالة
-                if (status.status === 'queued') {
-                    statusText.textContent = '⏳ في الانتظار...';
-                    statusBadge.textContent = 'في الانتظار';
-                    statusBadge.className = 'status-badge status-downloading';
-                    
-                } else if (status.status === 'downloading') {
-                    statusText.textContent = '⬇️ جاري التحميل من الرابط...';
-                    statusBadge.textContent = 'تحميل';
-                    statusBadge.className = 'status-badge status-downloading';
-                    
-                } else if (status.status === 'uploading') {
-                    statusText.textContent = '⬆️ جاري الرفع إلى Discord...';
-                    statusBadge.textContent = 'رفع';
-                    statusBadge.className = 'status-badge status-uploading';
-                    
-                } else if (status.status === 'completed') {
-                    clearInterval(checkInterval);
-                    loading.style.display = 'none';
-                    message.style.display = 'block';
-                    message.className = 'message success';
-                    message.textContent = status.message || '✅ تم الرفع بنجاح!';
-                    submitBtn.disabled = false;
-                    document.getElementById('file_url').value = '';
-                    document.getElementById('custom_filename').value = '';
-                    document.getElementById('fileInfo').classList.remove('show');
-                    currentJobId = null;
-                    failedChecks = 0;
-                    
-                } else if (status.status === 'failed') {
-                    clearInterval(checkInterval);
-                    loading.style.display = 'none';
-                    message.style.display = 'block';
-                    message.className = 'message error';
-                    message.textContent = '❌ ' + (status.message || 'فشلت العملية');
-                    submitBtn.disabled = false;
-                    currentJobId = null;
-                    failedChecks = 0;
-                }
-                
-            } catch (error) {
-                console.error('خطأ في فحص الحالة:', error);
-                failedChecks++;
-                
-                // إذا فشل الفحص أكثر من الحد المسموح
-                if (failedChecks >= MAX_FAILED_CHECKS) {
-                    clearInterval(checkInterval);
-                    document.getElementById('loading').style.display = 'none';
-                    const message = document.getElementById('message');
-                    message.style.display = 'block';
-                    message.className = 'message error';
-                    message.textContent = '❌ فقد الاتصال بالسيرفر. العملية قد تكون مستمرة في الخلفية.';
-                    document.getElementById('submitBtn').disabled = false;
-                    failedChecks = 0;
-                }
-                
-                // إذا كانت المشكلة timeout، نحاول مرة أخرى بهدوء
-                if (error.name === 'AbortError') {
-                    console.log('Timeout - سنحاول مرة أخرى...');
-                }
-            }
-        }
-        
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const submitBtn = document.getElementById('submitBtn');
-            const loading = document.getElementById('loading');
             const message = document.getElementById('message');
             
             // إخفاء الرسائل السابقة
             message.style.display = 'none';
-            failedChecks = 0;
             
-            // تعطيل الزر وإظهار Loading
+            // تعطيل الزر مؤقتاً
             submitBtn.disabled = true;
-            loading.style.display = 'block';
+            submitBtn.textContent = '⏳ جاري الإرسال...';
             
             const data = {
                 token: document.getElementById('token').value,
@@ -386,61 +226,43 @@
             };
             
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 ثانية
-                
-                // طلب بدء العملية
                 const response = await fetch('/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
-                    signal: controller.signal
+                    body: JSON.stringify(data)
                 });
-                
-                clearTimeout(timeoutId);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
                 
                 const result = await response.json();
                 
-                if (result.success && result.job_id) {
-                    currentJobId = result.job_id;
-                    console.log('Job started:', result.job_id);
+                if (result.success) {
+                    message.className = 'message success';
+                    message.innerHTML = `
+                        <strong>✅ ${result.message}</strong>
+                        <div class="job-id">
+                            Job ID: ${result.job_id}<br>
+                            <small>احتفظ به للمتابعة لاحقاً</small>
+                        </div>
+                        <br>
+                        <small>يمكنك الآن إغلاق هذه الصفحة - العملية تعمل في الخلفية! 🎉</small>
+                    `;
+                    message.style.display = 'block';
                     
-                    // بدء متابعة الحالة كل 3 ثواني (زيادة الفترة لتقليل الضغط)
-                    checkInterval = setInterval(() => {
-                        checkStatus(result.job_id);
-                    }, 3000);
-                    
-                    // فحص فوري
-                    setTimeout(() => checkStatus(result.job_id), 500);
+                    // مسح النموذج
+                    document.getElementById('file_url').value = '';
+                    document.getElementById('custom_filename').value = '';
                     
                 } else {
                     throw new Error(result.message || 'فشل بدء العملية');
                 }
                 
             } catch (error) {
-                loading.style.display = 'none';
+                message.className = 'message warning';
+                message.innerHTML = `<strong>⚠️ خطأ:</strong> ${error.message}`;
                 message.style.display = 'block';
-                message.className = 'message error';
-                
-                if (error.name === 'AbortError') {
-                    message.textContent = '❌ السيرفر لم يرد خلال 15 ثانية - حاول مرة أخرى';
-                } else {
-                    message.textContent = '❌ خطأ: ' + error.message;
-                }
-                
+            } finally {
+                // إعادة تفعيل الزر
                 submitBtn.disabled = false;
-                failedChecks = 0;
-            }
-        });
-        
-        // إيقاف التحديث عند إغلاق الصفحة
-        window.addEventListener('beforeunload', () => {
-            if (checkInterval) {
-                clearInterval(checkInterval);
+                submitBtn.textContent = '🚀 رفع الملف';
             }
         });
     </script>
