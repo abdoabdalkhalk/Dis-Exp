@@ -13,9 +13,8 @@ jobs_lock = Lock()
 
 class ChunkedUploadWrapper:
     """Wrapper يحاكي ملف عادي لكن يقرأ chunks من stream"""
-    def __init__(self, response, total_size, job_id):
+    def __init__(self, response, job_id):
         self.response = response
-        self.total_size = total_size
         self.job_id = job_id
         self.total_read = 0
         self.last_log = time.time()
@@ -76,10 +75,6 @@ class ChunkedUploadWrapper:
                     jobs[self.job_id]['progress'] = f'{mb:.0f}MB'
                     jobs[self.job_id]['last_update'] = now
             self.last_log = now
-    
-    def __len__(self):
-        """إرجاع الحجم الكلي - مهم جداً!"""
-        return self.total_size if self.total_size > 0 else 0
 
 def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filename=None):
     """رفع streaming مباشر بدون حفظ الملف"""
@@ -97,38 +92,13 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         }
         
         head_response = None
-        total_size = 0
+        original_filename = file_url.split('/')[-1].split('?')[0]
+        
         try:
             head_response = requests.head(file_url, headers=headers, timeout=30, allow_redirects=True)
-            total_size = int(head_response.headers.get('content-length', 0))
         except Exception as e:
             print(f"[{job_id}] ⚠️ تحذير HEAD request: {e}")
-            try:
-                test_response = requests.get(file_url, headers=headers, stream=True, timeout=10)
-                total_size = int(test_response.headers.get('content-length', 0))
-                test_response.close()
-            except:
-                total_size = 0
         
-        if total_size == 0:
-            with jobs_lock:
-                jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = '❌ لا يمكن تحديد حجم الملف! تأكد أن الرابط مباشر'
-            return
-        
-        size_mb = total_size / (1024*1024)
-        print(f"[{job_id}] 📦 حجم: {size_mb:.2f} MB")
-        
-        if size_mb > 500:
-            with jobs_lock:
-                jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = f'❌ الملف كبير ({size_mb:.1f}MB). الحد الأقصى 500MB'
-            return
-        
-        with jobs_lock:
-            jobs[job_id]['progress'] = f'{size_mb:.1f}MB'
-        
-        original_filename = file_url.split('/')[-1].split('?')[0]
         if not original_filename or '.' not in original_filename:
             if head_response:
                 content_disp = head_response.headers.get('content-disposition', '')
@@ -171,7 +141,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         )
         file_response.raise_for_status()
         
-        file_wrapper = ChunkedUploadWrapper(file_response, total_size, job_id)
+        file_wrapper = ChunkedUploadWrapper(file_response, job_id)
         
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
@@ -189,7 +159,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         uploaded_mb = file_wrapper.total_read / (1024*1024)
         
         print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
-        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB من {size_mb:.1f}MB")
+        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB")
         
         if discord_response.status_code == 200:
             with jobs_lock:
