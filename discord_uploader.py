@@ -1,14 +1,13 @@
 from flask import Flask, render_template, request, jsonify, Response
 import requests
-import os
 import time
 import uuid
 from threading import Thread, Lock
 import json
-import io
 
 app = Flask(__name__)
 
+# تخزين Jobs في الذاكرة (كل مستخدم له session خاص)
 jobs = {}
 jobs_lock = Lock()
 
@@ -30,9 +29,7 @@ class ChunkedUploadWrapper:
             return b''
         
         try:
-            # إذا طُلب حجم محدد
             if size is not None and size > 0:
-                # نملأ الـ buffer حتى نصل للحجم المطلوب
                 while len(self.buffer) < size and not self.finished:
                     try:
                         chunk = next(self.iterator)
@@ -42,12 +39,10 @@ class ChunkedUploadWrapper:
                         self.finished = True
                         break
                 
-                # نأخذ الحجم المطلوب من الـ buffer
                 result = self.buffer[:size]
                 self.buffer = self.buffer[size:]
                 
             else:
-                # قراءة كل ما تبقى
                 while not self.finished:
                     try:
                         chunk = next(self.iterator)
@@ -60,7 +55,6 @@ class ChunkedUploadWrapper:
                 result = self.buffer
                 self.buffer = b''
             
-            # تحديث العداد
             if result:
                 self.total_read += len(result)
                 self._log_progress()
@@ -102,7 +96,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
             'Connection': 'keep-alive'
         }
         
-        # فحص الحجم - مهم جداً!
         head_response = None
         total_size = 0
         try:
@@ -110,7 +103,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
             total_size = int(head_response.headers.get('content-length', 0))
         except Exception as e:
             print(f"[{job_id}] ⚠️ تحذير HEAD request: {e}")
-            # محاولة GET بدلاً من HEAD
             try:
                 test_response = requests.get(file_url, headers=headers, stream=True, timeout=10)
                 total_size = int(test_response.headers.get('content-length', 0))
@@ -127,7 +119,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         size_mb = total_size / (1024*1024)
         print(f"[{job_id}] 📦 حجم: {size_mb:.2f} MB")
         
-        # تحقق من الحد الأقصى
         if size_mb > 500:
             with jobs_lock:
                 jobs[job_id]['status'] = 'failed'
@@ -137,7 +128,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         with jobs_lock:
             jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f}MB'
         
-        # الحصول على اسم الملف
         original_filename = file_url.split('/')[-1].split('?')[0]
         if not original_filename or '.' not in original_filename:
             if head_response:
@@ -163,7 +153,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         
         print(f"[{job_id}] 📄 اسم: {filename}")
         
-        # بدء الـ streaming
         with jobs_lock:
             jobs[job_id]['status'] = 'uploading'
             jobs[job_id]['progress'] = 'بدء الرفع المباشر...'
@@ -173,7 +162,6 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         
         start_time = time.time()
         
-        # فتح stream من الرابط
         file_response = requests.get(
             file_url,
             headers=headers,
@@ -183,10 +171,8 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         )
         file_response.raise_for_status()
         
-        # إنشاء wrapper
         file_wrapper = ChunkedUploadWrapper(file_response, total_size, job_id)
         
-        # رفع مباشر لـ Discord
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
@@ -270,7 +256,7 @@ def upload():
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'message': 'بدء الرفع المباشر! (استخدام ذاكرة منخفض جداً) 🚀'
+            'message': 'بدء الرفع المباشر! 🚀'
         }), 200
         
     except Exception as e:
@@ -337,7 +323,7 @@ def keep_alive():
 def cleanup_old_jobs():
     """تنظيف الـ jobs القديمة"""
     while True:
-        time.sleep(300)  # كل 5 دقائق
+        time.sleep(300)
         now = time.time()
         with jobs_lock:
             old = [j for j, d in jobs.items() if now - d.get('last_update', d['created_at']) > 3600]
@@ -348,6 +334,5 @@ def cleanup_old_jobs():
 cleanup_thread = Thread(target=cleanup_old_jobs, daemon=True)
 cleanup_thread.start()
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+# للتوافق مع Vercel
+app = app
