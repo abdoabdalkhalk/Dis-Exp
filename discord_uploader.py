@@ -68,12 +68,12 @@ class ChunkedUploadWrapper:
     def _log_progress(self):
         """تسجيل التقدم"""
         now = time.time()
-        if now - self.last_log > 10:
+        if now - self.last_log > 5:  # كل 5 ثواني
             mb = self.total_read / (1024*1024)
-            print(f"[{self.job_id}] 📤 رفع: {mb:.1f}MB")
+            print(f"[{self.job_id}] 📤 {mb:.1f}MB")
             with jobs_lock:
                 if self.job_id in jobs:
-                    jobs[self.job_id]['progress'] = f'رفع {mb:.0f}MB...'
+                    jobs[self.job_id]['progress'] = f'{mb:.0f}MB'
                     jobs[self.job_id]['last_update'] = now
             self.last_log = now
     
@@ -86,7 +86,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
     try:
         with jobs_lock:
             jobs[job_id]['status'] = 'checking'
-            jobs[job_id]['progress'] = 'فحص الملف...'
+            jobs[job_id]['progress'] = 'فحص...'
         
         print(f"[{job_id}] 🔍 فحص: {file_url}")
         
@@ -126,7 +126,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
             return
         
         with jobs_lock:
-            jobs[job_id]['progress'] = f'حجم الملف: {size_mb:.1f}MB'
+            jobs[job_id]['progress'] = f'{size_mb:.1f}MB'
         
         original_filename = file_url.split('/')[-1].split('?')[0]
         if not original_filename or '.' not in original_filename:
@@ -155,7 +155,7 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         
         with jobs_lock:
             jobs[job_id]['status'] = 'uploading'
-            jobs[job_id]['progress'] = 'بدء الرفع المباشر...'
+            jobs[job_id]['progress'] = 'رفع...'
             jobs[job_id]['last_update'] = time.time()
         
         print(f"[{job_id}] 🚀 بدء streaming upload...")
@@ -194,21 +194,21 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         if discord_response.status_code == 200:
             with jobs_lock:
                 jobs[job_id]['status'] = 'completed'
-                jobs[job_id]['message'] = f'✅ تم رفع "{filename}" ({uploaded_mb:.1f}MB) في {upload_time/60:.1f} دقيقة!'
-                jobs[job_id]['progress'] = 'اكتمل!'
+                jobs[job_id]['message'] = f'✅ تم! {uploaded_mb:.1f}MB في {upload_time/60:.1f}د'
+                jobs[job_id]['progress'] = '✅'
                 jobs[job_id]['last_update'] = time.time()
             print(f"[{job_id}] 🎉 SUCCESS!")
         else:
-            error_data = discord_response.text[:300]
+            error_data = discord_response.text[:200]
             with jobs_lock:
                 jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = f'❌ خطأ Discord ({discord_response.status_code}): {error_data}'
+                jobs[job_id]['message'] = f'❌ خطأ ({discord_response.status_code})'
             print(f"[{job_id}] ❌ Discord: {error_data}")
             
     except Exception as e:
         with jobs_lock:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = f'❌ خطأ: {str(e)[:200]}'
+            jobs[job_id]['message'] = f'❌ {str(e)[:100]}'
         print(f"[{job_id}] ❌ Error: {e}")
         import traceback
         traceback.print_exc()
@@ -238,7 +238,7 @@ def upload():
         with jobs_lock:
             jobs[job_id] = {
                 'status': 'queued',
-                'progress': 'في الانتظار...',
+                'progress': 'انتظار...',
                 'message': '',
                 'created_at': time.time(),
                 'last_update': time.time()
@@ -256,7 +256,7 @@ def upload():
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'message': 'بدء الرفع المباشر! 🚀'
+            'message': 'بدأ الرفع 🚀'
         }), 200
         
     except Exception as e:
@@ -269,7 +269,12 @@ def status(job_id):
         if job_id not in jobs:
             return jsonify({'status': 'not_found'}), 404
         job_data = jobs[job_id].copy()
-    return jsonify(job_data)
+    
+    # إرسال keep-alive headers
+    return jsonify(job_data), 200, {
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    }
 
 @app.route('/jobs')
 def list_jobs():
