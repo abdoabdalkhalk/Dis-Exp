@@ -1,15 +1,21 @@
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_file
 import requests
 import time
 import uuid
 from threading import Thread, Lock
 import json
+import os
+import tempfile
 
 app = Flask(__name__)
 
 # تخزين Jobs في الذاكرة (كل مستخدم له session خاص)
 jobs = {}
 jobs_lock = Lock()
+
+# مجلد temp للملفات
+TEMP_DIR = tempfile.gettempdir()
+temp_files = {}  # {job_id: file_path}
 
 class ChunkedUploadWrapper:
     """Wrapper يحاكي ملف عادي لكن يقرأ chunks من stream"""
@@ -77,7 +83,8 @@ class ChunkedUploadWrapper:
             self.last_log = now
 
 def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filename=None):
-    """رفع streaming مباشر بدون حفظ الملف"""
+    """تحميل الملف إلى temp ثم رفعه للديسكورد"""
+    temp_file_path = None
     try:
         with jobs_lock:
             jobs[job_id]['status'] = 'checking'
@@ -123,14 +130,15 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         
         print(f"[{job_id}] 📄 اسم: {filename}")
         
+        # تحميل الملف إلى temp
         with jobs_lock:
-            jobs[job_id]['status'] = 'uploading'
-            jobs[job_id]['progress'] = 'رفع...'
+            jobs[job_id]['status'] = 'downloading'
+            jobs[job_id]['progress'] = 'تحميل إلى temp...'
             jobs[job_id]['last_update'] = time.time()
         
-        print(f"[{job_id}] 🚀 بدء streaming upload...")
+        print(f"[{job_id}] ⬇️ بدء التحميل إلى temp...")
         
-        start_time = time.time()
+        temp_file_path = os.path.join(TEMP_DIR, f"{job_id}_{filename}")
         
         file_response = requests.get(
             file_url,
@@ -141,30 +149,58 @@ def stream_upload_to_discord(job_id, file_url, token, channel_id, custom_filenam
         )
         file_response.raise_for_status()
         
-        file_wrapper = ChunkedUploadWrapper(file_response, job_id)
+        # حفظ الملف في temp
+        total_downloaded = 0
+        with open(temp_file_path, 'wb') as f:
+            for chunk in file_response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    total_downloaded += len(chunk)
+                    
+                    # تحديث التقدم
+                    mb = total_downloaded / (1024*1024)
+                    with jobs_lock:
+                        jobs[job_id]['progress'] = f'⬇️ {mb:.1f}MB'
+                        jobs[job_id]['last_update'] = time.time()
+        
+        # حفظ مسار الملف
+        temp_files[job_id] = temp_file_path
+        
+        download_url = f'/download/{job_id}'
+        
+        with jobs_lock:
+            jobs[job_id]['status'] = 'temp_ready'
+            jobs[job_id]['progress'] = f'✅ تم التحميل - {total_downloaded/(1024*1024):.1f}MB'
+            jobs[job_id]['download_url'] = download_url
+            jobs[job_id]['filename'] = filename
+            jobs[job_id]['last_update'] = time.time()
+        
+        print(f"[{job_id}] ✅ الملف جاهز في temp: {temp_file_path}")
+        print(f"[{job_id}] 🔗 رابط التحميل: {download_url}")
+        
+        # الآن رفع الملف للديسكورد
+        with jobs_lock:
+            jobs[job_id]['status'] = 'uploading'
+            jobs[job_id]['progress'] = 'رفع للديسكورد...'
+            jobs[job_id]['last_update'] = time.time()
+        
+        print(f"[{job_id}] 📤 بدء الرفع للديسكورد...")
         
         discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
         
-        print(f"[{job_id}] 📤 بدء الرفع...")
-        
-        discord_response = requests.post(
-            discord_url,
-            headers=discord_headers,
-            files={'file': (filename, file_wrapper, 'application/octet-stream')},
-            timeout=None
-        )
-        
-        upload_time = time.time() - start_time
-        uploaded_mb = file_wrapper.total_read / (1024*1024)
-        
-        print(f"[{job_id}] ⏱️ وقت الرفع: {upload_time/60:.1f} دقيقة")
-        print(f"[{job_id}] 📊 تم رفع: {uploaded_mb:.1f}MB")
+        with open(temp_file_path, 'rb') as f:
+            discord_response = requests.post(
+                discord_url,
+                headers=discord_headers,
+                files={'file': (filename, f, 'application/octet-stream')},
+                timeout=None
+            )
         
         if discord_response.status_code == 200:
             with jobs_lock:
                 jobs[job_id]['status'] = 'completed'
-                jobs[job_id]['message'] = f'✅ تم! {uploaded_mb:.1f}MB في {upload_time/60:.1f}د'
+                jobs[job_id]['message'] = f'✅ تم الرفع للديسكورد!'
                 jobs[job_id]['progress'] = '✅'
                 jobs[job_id]['last_update'] = time.time()
             print(f"[{job_id}] 🎉 SUCCESS!")
@@ -191,6 +227,26 @@ def index():
 def health():
     return jsonify({'status': 'ok', 'timestamp': time.time()})
 
+@app.route('/download/<job_id>')
+def download_file(job_id):
+    """تحميل الملف من temp"""
+    if job_id not in temp_files:
+        return jsonify({'error': 'الملف غير موجود'}), 404
+    
+    file_path = temp_files[job_id]
+    
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'الملف غير موجود'}), 404
+    
+    with jobs_lock:
+        filename = jobs.get(job_id, {}).get('filename', 'file')
+    
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=filename
+    )
+
 @app.route('/upload', methods=['POST'])
 def upload():
     """بدء عملية الرفع"""
@@ -211,7 +267,9 @@ def upload():
                 'progress': 'انتظار...',
                 'message': '',
                 'created_at': time.time(),
-                'last_update': time.time()
+                'last_update': time.time(),
+                'download_url': None,
+                'filename': None
             }
         
         thread = Thread(
@@ -221,12 +279,12 @@ def upload():
         thread.daemon = True
         thread.start()
         
-        print(f"[{job_id}] 🎬 Job started (STREAMING MODE)")
+        print(f"[{job_id}] 🎬 Job started (TEMP MODE)")
         
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'message': 'بدأ الرفع 🚀'
+            'message': 'بدأ التحميل 🚀'
         }), 200
         
     except Exception as e:
@@ -240,7 +298,6 @@ def status(job_id):
             return jsonify({'status': 'not_found'}), 404
         job_data = jobs[job_id].copy()
     
-    # إرسال keep-alive headers
     return jsonify(job_data), 200, {
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
@@ -249,7 +306,7 @@ def status(job_id):
 @app.route('/jobs')
 def list_jobs():
     with jobs_lock:
-        active = sum(1 for j in jobs.values() if j['status'] in ['queued', 'checking', 'uploading'])
+        active = sum(1 for j in jobs.values() if j['status'] in ['queued', 'checking', 'downloading', 'uploading'])
         jobs_copy = {k: v.copy() for k, v in jobs.items()}
     return jsonify({
         'total': len(jobs_copy),
@@ -265,9 +322,14 @@ def keep_alive():
             for i in range(300):
                 with jobs_lock:
                     active_jobs = {
-                        k: {'status': v['status'], 'progress': v['progress']}
+                        k: {
+                            'status': v['status'], 
+                            'progress': v['progress'],
+                            'download_url': v.get('download_url'),
+                            'filename': v.get('filename')
+                        }
                         for k, v in jobs.items()
-                        if v['status'] in ['queued', 'checking', 'uploading']
+                        if v['status'] in ['queued', 'checking', 'downloading', 'temp_ready', 'uploading']
                     }
                 
                 data = {
@@ -303,6 +365,14 @@ def cleanup_old_jobs():
         with jobs_lock:
             old = [j for j, d in jobs.items() if now - d.get('last_update', d['created_at']) > 3600]
             for j in old:
+                # حذف الملف من temp
+                if j in temp_files:
+                    try:
+                        if os.path.exists(temp_files[j]):
+                            os.remove(temp_files[j])
+                        del temp_files[j]
+                    except:
+                        pass
                 del jobs[j]
                 print(f"🗑️ Cleaned: {j}")
 
