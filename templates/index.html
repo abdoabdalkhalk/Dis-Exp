@@ -181,6 +181,36 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        
+        .download-box {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .download-box.active {
+            display: block;
+        }
+        
+        .download-btn {
+            background: #28a745;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .download-btn:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
@@ -230,6 +260,17 @@
             
             <div class="message" id="message"></div>
             
+            <div class="download-box" id="downloadBox">
+                <strong>✅ الملف جاهز للتحميل من السيرفر!</strong>
+                <br>
+                <a href="#" id="downloadLink" class="download-btn" target="_blank">
+                    ⬇️ تحميل الملف
+                </a>
+                <div style="margin-top: 10px; font-size: 13px; color: #155724;">
+                    الآن سيتم رفعه تلقائياً للديسكورد...
+                </div>
+            </div>
+            
             <div class="live-status" id="liveStatus">
                 <strong>
                     <span class="status-pulse"></span>
@@ -263,8 +304,17 @@
                     if (data.jobs && data.jobs[jobId]) {
                         const job = data.jobs[jobId];
                         document.getElementById('statusText').textContent = 
-                            `${job.status === 'downloading' ? '⬇️' : '⬆️'} ${job.progress}`;
+                            `${job.status === 'downloading' ? '⬇️' : job.status === 'uploading' ? '⬆️' : '📋'} ${job.progress}`;
                         document.getElementById('liveStatus').classList.add('active');
+                        
+                        // إذا أصبح الملف جاهز في temp
+                        if (job.status === 'temp_ready' && job.download_url) {
+                            const downloadBox = document.getElementById('downloadBox');
+                            const downloadLink = document.getElementById('downloadLink');
+                            downloadLink.href = job.download_url;
+                            downloadBox.classList.add('active');
+                        }
+                        
                     } else if (data.active_jobs === 0) {
                         // انتهت العملية
                         document.getElementById('statusText').textContent = '✅ اكتملت العملية!';
@@ -299,6 +349,7 @@
             // إخفاء الرسائل السابقة
             message.style.display = 'none';
             document.getElementById('liveStatus').classList.remove('active');
+            document.getElementById('downloadBox').classList.remove('active');
             
             // تعطيل الزر مؤقتاً
             submitBtn.disabled = true;
