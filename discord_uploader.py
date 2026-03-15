@@ -16,6 +16,17 @@ TEMP_DIR = tempfile.gettempdir()
 temp_files = {}  # {job_id: [file_paths]}
 
 
+def sanitize_filename(name):
+    """Strip any path separators and illegal characters from a filename"""
+    import re
+    # Take only the last component if slashes sneak in
+    name = name.replace('\\', '/').split('/')[-1]
+    # Remove characters that are illegal in filenames
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    name = name.strip('. ')
+    return name or 'file.bin'
+
+
 def stream_upload_to_discord(job_id, file_urls, token, channel_id, custom_filenames=None, message_content=''):
     """Download files to temp then upload them all to Discord in one message"""
     temp_file_paths = []
@@ -30,31 +41,33 @@ def stream_upload_to_discord(job_id, file_urls, token, channel_id, custom_filena
             'Connection': 'keep-alive'
         }
 
+        from urllib.parse import urlparse, unquote
         filenames = []
         for i, file_url in enumerate(file_urls):
-            original_filename = file_url.split('/')[-1].split('?')[0]
+            parsed = urlparse(file_url)
+            original_filename = sanitize_filename(unquote(parsed.path.split('/')[-1]))
 
             try:
                 head_response = requests.head(file_url, headers=headers, timeout=30, allow_redirects=True)
                 if not original_filename or '.' not in original_filename:
                     content_disp = head_response.headers.get('content-disposition', '')
                     if 'filename=' in content_disp:
-                        original_filename = content_disp.split('filename=')[-1].strip('"\'')
+                        original_filename = sanitize_filename(content_disp.split('filename=')[-1].strip('"\''))
                     else:
                         original_filename = f'file_{i+1}.bin'
             except Exception:
                 if not original_filename or '.' not in original_filename:
                     original_filename = f'file_{i+1}.bin'
 
-            file_extension = ('.' + original_filename.split('.')[-1]) if '.' in original_filename else ''
+            file_extension = ('.' + original_filename.rsplit('.', 1)[-1]) if '.' in original_filename else ''
 
             custom_name = ''
             if custom_filenames and i < len(custom_filenames):
-                custom_name = (custom_filenames[i] or '').strip()
+                custom_name = sanitize_filename((custom_filenames[i] or '').strip())
 
             if custom_name:
                 if '.' in custom_name:
-                    custom_name = '.'.join(custom_name.split('.')[:-1])
+                    custom_name = custom_name.rsplit('.', 1)[0]
                 filename = custom_name + file_extension
             else:
                 filename = original_filename
