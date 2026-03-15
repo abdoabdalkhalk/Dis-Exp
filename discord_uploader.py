@@ -1,131 +1,238 @@
-from flask import Flask, render_template, request, jsonify, Response, send_file
+"""
+Discord Uploader — Zero-copy streaming architecture
+====================================================
+URL files:
+  1. HEAD request  → get Content-Length + filename
+  2. GET (stream)  → pipe bytes directly into multipart body → Discord
+  No temp file written at all.
+
+Local files (uploaded from browser):
+  Already in memory/temp via Flask — sent straight to Discord.
+  Temp file is deleted immediately after upload.
+
+Multiple files → one Discord message.
+"""
+
+from flask import Flask, render_template, request, jsonify, Response
 import requests
 import time
 import uuid
-from threading import Thread, Lock
-import json
 import os
+import re
+import json
 import tempfile
+from threading import Thread, Lock
+from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
 
-jobs = {}
+jobs: dict = {}
 jobs_lock = Lock()
 
 TEMP_DIR = tempfile.gettempdir()
-temp_files = {}  # {job_id: [file_paths]}
+CHUNK = 8 * 1024 * 1024   # 8 MB read chunks
+DL_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': '*/*',
+    'Accept-Encoding': 'identity',   # disable gzip so Content-Length stays accurate
+}
 
 
-def sanitize_filename(name):
-    """Strip any path separators and illegal characters from a filename"""
-    import re
-    # Take only the last component if slashes sneak in
+# ── Utilities ──────────────────────────────────────────────────────────────────
+
+def sanitize(name: str) -> str:
     name = name.replace('\\', '/').split('/')[-1]
-    # Remove characters that are illegal in filenames
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
-    name = name.strip('. ')
-    return name or 'file.bin'
+    return name.strip('. ') or 'file.bin'
 
 
-def stream_upload_to_discord(job_id, file_urls, token, channel_id, custom_filenames=None, message_content=''):
-    """Download files to temp then upload them all to Discord in one message"""
-    temp_file_paths = []
+def get_mime(name: str) -> str:
+    ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    return {
+        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+        'gif': 'image/gif',  'webp': 'image/webp', 'bmp': 'image/bmp',
+        'svg': 'image/svg+xml',
+        'mp4': 'video/mp4',  'mov': 'video/quicktime', 'webm': 'video/webm',
+        'mp3': 'audio/mpeg', 'wav': 'audio/wav',
+        'pdf': 'application/pdf',
+        'zip': 'application/zip', 'rar': 'application/x-rar-compressed',
+    }.get(ext, 'application/octet-stream')
+
+
+def resolve_url_meta(file_url: str, fallback_idx: int) -> tuple[str, int | None]:
+    """
+    Returns (final_filename, content_length_or_None).
+    Does one HEAD request to get filename + size.
+    """
+    parsed = urlparse(file_url)
+    filename = sanitize(unquote(parsed.path.split('/')[-1]))
+
+    content_length = None
     try:
+        hr = requests.head(file_url, headers=DL_HEADERS, timeout=20, allow_redirects=True)
+        cl = hr.headers.get('content-length')
+        if cl and cl.isdigit():
+            content_length = int(cl)
+        if not filename or '.' not in filename:
+            cd = hr.headers.get('content-disposition', '')
+            if 'filename=' in cd:
+                filename = sanitize(cd.split('filename=')[-1].strip('"\''))
+    except Exception:
+        pass
+
+    if not filename or '.' not in filename:
+        filename = f'file_{fallback_idx + 1}.bin'
+
+    return filename, content_length
+
+
+def set_progress(job_id: str, status: str, progress: str):
+    with jobs_lock:
+        jobs[job_id]['status']      = status
+        jobs[job_id]['progress']    = progress
+        jobs[job_id]['last_update'] = time.time()
+
+
+# ── Streaming multipart builder ────────────────────────────────────────────────
+
+class ProgressStream:
+    """
+    Wraps a requests streaming response.
+    Reads in large chunks and updates job progress without locking on every chunk.
+    """
+    def __init__(self, resp, job_id, file_idx, total_files, total_bytes):
+        self.resp        = resp
+        self.job_id      = job_id
+        self.file_idx    = file_idx
+        self.total_files = total_files
+        self.total_bytes = total_bytes   # may be None
+        self.read_bytes  = 0
+        self.last_update = 0.0
+        self._iter       = resp.iter_content(chunk_size=CHUNK)
+        self._buf        = b''
+        self._done       = False
+
+    def read(self, size=-1):
+        # requests-toolbelt / urllib3 calls read() on our object
+        if self._done and not self._buf:
+            return b''
+        try:
+            while not self._done and (size < 0 or len(self._buf) < size):
+                chunk = next(self._iter)
+                if chunk:
+                    self._buf += chunk
+        except StopIteration:
+            self._done = True
+
+        if size < 0:
+            out, self._buf = self._buf, b''
+        else:
+            out, self._buf = self._buf[:size], self._buf[size:]
+
+        if out:
+            self.read_bytes += len(out)
+            self._maybe_update()
+        return out
+
+    def _maybe_update(self):
+        now = time.time()
+        if now - self.last_update < 0.8:
+            return
+        self.last_update = now
+        mb = self.read_bytes / (1024 * 1024)
+        if self.total_bytes:
+            pct = self.read_bytes / self.total_bytes * 100
+            msg = f'File {self.file_idx+1}/{self.total_files}: {mb:.1f} MB ({pct:.0f}%)'
+        else:
+            msg = f'File {self.file_idx+1}/{self.total_files}: {mb:.1f} MB'
         with jobs_lock:
-            jobs[job_id]['status'] = 'checking'
-            jobs[job_id]['progress'] = 'Checking files...'
+            jobs[self.job_id]['progress']    = msg
+            jobs[self.job_id]['last_update'] = now
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': '*/*',
-            'Connection': 'keep-alive'
-        }
 
-        from urllib.parse import urlparse, unquote
-        filenames = []
-        for i, file_url in enumerate(file_urls):
-            parsed = urlparse(file_url)
-            original_filename = sanitize_filename(unquote(parsed.path.split('/')[-1]))
+# ── Worker ─────────────────────────────────────────────────────────────────────
 
-            try:
-                head_response = requests.head(file_url, headers=headers, timeout=30, allow_redirects=True)
-                if not original_filename or '.' not in original_filename:
-                    content_disp = head_response.headers.get('content-disposition', '')
-                    if 'filename=' in content_disp:
-                        original_filename = sanitize_filename(content_disp.split('filename=')[-1].strip('"\''))
-                    else:
-                        original_filename = f'file_{i+1}.bin'
-            except Exception:
-                if not original_filename or '.' not in original_filename:
-                    original_filename = f'file_{i+1}.bin'
+def upload_worker(job_id: str, items: list, token: str,
+                  channel_id: str, message_content: str = ''):
+    local_temps = []   # paths to delete after upload
+    try:
+        total = len(items)
+        set_progress(job_id, 'preparing', 'Resolving files...')
 
-            file_extension = ('.' + original_filename.rsplit('.', 1)[-1]) if '.' in original_filename else ''
+        # ── Step 1: resolve metadata for every item ──────────────────────────
+        resolved = []   # list of dicts ready for multipart
+        for i, item in enumerate(items):
+            if item['type'] == 'local':
+                resolved.append({
+                    'kind':     'local',
+                    'path':     item['path'],
+                    'filename': item['filename'],
+                    'size':     os.path.getsize(item['path']),
+                })
+                local_temps.append(item['path'])
 
-            custom_name = ''
-            if custom_filenames and i < len(custom_filenames):
-                custom_name = sanitize_filename((custom_filenames[i] or '').strip())
+            else:  # url
+                raw_url    = item['url']
+                custom     = sanitize((item.get('custom_name') or '').strip())
+                fname, cl  = resolve_url_meta(raw_url, i)
 
-            if custom_name:
-                if '.' in custom_name:
-                    custom_name = custom_name.rsplit('.', 1)[0]
-                filename = custom_name + file_extension
-            else:
-                filename = original_filename
+                if custom:
+                    ext   = ('.' + fname.rsplit('.', 1)[-1]) if '.' in fname else ''
+                    stem  = custom.rsplit('.', 1)[0] if '.' in custom else custom
+                    fname = stem + ext
 
-            filenames.append(filename)
+                resolved.append({
+                    'kind':    'url',
+                    'url':     raw_url,
+                    'filename': fname,
+                    'size':    cl,      # None if unknown
+                })
 
-        # Download all files to temp
-        with jobs_lock:
-            jobs[job_id]['status'] = 'downloading'
-            jobs[job_id]['progress'] = f'Downloading 0/{len(file_urls)}...'
-            jobs[job_id]['last_update'] = time.time()
+        # ── Step 2: build multipart and POST to Discord ───────────────────────
+        set_progress(job_id, 'uploading', f'Streaming {total} file(s) → Discord...')
 
-        for i, (file_url, filename) in enumerate(zip(file_urls, filenames)):
-            with jobs_lock:
-                jobs[job_id]['progress'] = f'Downloading file {i+1}/{len(file_urls)}...'
-
-            temp_file_path = os.path.join(TEMP_DIR, f"{job_id}_{i}_{filename}")
-
-            file_response = requests.get(
-                file_url, headers=headers, stream=True, timeout=None, allow_redirects=True
-            )
-            file_response.raise_for_status()
-
-            total_downloaded = 0
-            with open(temp_file_path, 'wb') as f:
-                for chunk in file_response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        total_downloaded += len(chunk)
-                        mb = total_downloaded / (1024 * 1024)
-                        with jobs_lock:
-                            jobs[job_id]['progress'] = f'File {i+1}/{len(file_urls)}: {mb:.1f}MB'
-                            jobs[job_id]['last_update'] = time.time()
-
-            temp_file_paths.append((temp_file_path, filename))
-
-        temp_files[job_id] = temp_file_paths
-
-        with jobs_lock:
-            jobs[job_id]['status'] = 'uploading'
-            jobs[job_id]['progress'] = f'Uploading {len(temp_file_paths)} file(s) to Discord...'
-            jobs[job_id]['last_update'] = time.time()
-
-        discord_url = f'https://discord.com/api/v10/channels/{channel_id}/messages'
+        discord_url     = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
 
-        files_payload = []
-        file_handles = []
-        for idx, (path, fname) in enumerate(temp_file_paths):
-            fh = open(path, 'rb')
-            file_handles.append(fh)
-            files_payload.append((f'files[{idx}]', (fname, fh, 'application/octet-stream')))
+        # We build the multipart body manually so we can stream URL files
+        # without writing them to disk.
+        # requests-toolbelt is not always installed, so we use a pipe approach:
+        # open all local files, open all URL streams, pass them to requests as
+        # file-like objects inside the files= list.
+
+        active_streams = []   # ProgressStream objects to close later
+        active_handles = []   # open file handles for local files
+        files_payload  = []
+
+        for idx, r in enumerate(resolved):
+            mime = get_mime(r['filename'])
+            if r['kind'] == 'local':
+                fh = open(r['path'], 'rb')
+                active_handles.append(fh)
+                files_payload.append(
+                    (f'files[{idx}]', (r['filename'], fh, mime))
+                )
+            else:
+                # Open the remote stream NOW — no temp file
+                set_progress(job_id, 'uploading',
+                             f'Opening stream {idx+1}/{total}: {r["filename"]}')
+                resp = requests.get(
+                    r['url'], headers=DL_HEADERS,
+                    stream=True, timeout=None, allow_redirects=True
+                )
+                resp.raise_for_status()
+                ps = ProgressStream(resp, job_id, idx, total, r['size'])
+                active_streams.append(ps)
+                files_payload.append(
+                    (f'files[{idx}]', (r['filename'], ps, mime))
+                )
 
         data_payload = {}
         if message_content:
             data_payload['content'] = message_content
 
-        discord_response = requests.post(
+        # Single POST — streams all files concurrently through urllib3
+        discord_resp = requests.post(
             discord_url,
             headers=discord_headers,
             files=files_payload,
@@ -133,28 +240,45 @@ def stream_upload_to_discord(job_id, file_urls, token, channel_id, custom_filena
             timeout=None
         )
 
-        for fh in file_handles:
-            fh.close()
+        for fh in active_handles:
+            try: fh.close()
+            except Exception: pass
+        for ps in active_streams:
+            try: ps.resp.close()
+            except Exception: pass
 
-        if discord_response.status_code == 200:
+        if discord_resp.status_code == 200:
             with jobs_lock:
-                jobs[job_id]['status'] = 'completed'
-                jobs[job_id]['message'] = f'Successfully uploaded {len(temp_file_paths)} file(s)!'
-                jobs[job_id]['progress'] = 'Done'
+                jobs[job_id]['status']      = 'completed'
+                jobs[job_id]['message']     = f'Uploaded {total} file(s) successfully!'
+                jobs[job_id]['progress']    = 'Done'
                 jobs[job_id]['last_update'] = time.time()
         else:
-            error_data = discord_response.text[:200]
             with jobs_lock:
-                jobs[job_id]['status'] = 'failed'
-                jobs[job_id]['message'] = f'Discord error ({discord_response.status_code}): {error_data}'
+                jobs[job_id]['status']      = 'failed'
+                jobs[job_id]['message']     = (
+                    f'Discord error {discord_resp.status_code}: {discord_resp.text[:300]}'
+                )
+                jobs[job_id]['last_update'] = time.time()
 
     except Exception as e:
+        import traceback; traceback.print_exc()
         with jobs_lock:
-            jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = f'Error: {str(e)[:200]}'
-        import traceback
-        traceback.print_exc()
+            jobs[job_id]['status']      = 'failed'
+            jobs[job_id]['message']     = f'Error: {str(e)[:300]}'
+            jobs[job_id]['last_update'] = time.time()
 
+    finally:
+        # Delete local temp files uploaded from browser
+        for path in local_temps:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+
+
+# ── Flask routes ───────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -169,37 +293,56 @@ def health():
 @app.route('/upload', methods=['POST'])
 def upload():
     try:
-        data = request.json
-        file_urls = data.get('file_urls', [])
-        token = data.get('token')
-        channel_id = data.get('channel_id')
-        custom_filenames = data.get('custom_filenames', [])
-        message_content = data.get('message_content', '')
+        token           = request.form.get('token', '').strip()
+        channel_id      = request.form.get('channel_id', '').strip()
+        message_content = request.form.get('message_content', '').strip()
+        items_meta      = json.loads(request.form.get('items', '[]'))
 
-        if not file_urls or not token or not channel_id:
-            return jsonify({'success': False, 'message': 'All fields are required'}), 400
+        if not token or not channel_id:
+            return jsonify({'success': False, 'message': 'Token and Channel ID are required'}), 400
+        if not items_meta:
+            return jsonify({'success': False, 'message': 'No files specified'}), 400
 
         job_id = str(uuid.uuid4())[:8]
+
+        resolved_items = []
+        for meta in items_meta:
+            if meta['type'] == 'local':
+                fobj = request.files.get(f"file_{meta['index']}")
+                if not fobj:
+                    return jsonify({'success': False,
+                                    'message': f'Missing file for index {meta["index"]}'}), 400
+                fname     = sanitize(fobj.filename or f'upload_{meta["index"]}.bin')
+                tmp_path  = os.path.join(TEMP_DIR, f"{job_id}_local_{meta['index']}_{fname}")
+                fobj.save(tmp_path)
+                resolved_items.append({'type': 'local', 'path': tmp_path, 'filename': fname})
+            else:
+                resolved_items.append({
+                    'type':        'url',
+                    'url':         meta.get('url', ''),
+                    'custom_name': meta.get('custom_name', ''),
+                })
+
         with jobs_lock:
             jobs[job_id] = {
-                'status': 'queued',
-                'progress': 'Queued...',
-                'message': '',
-                'created_at': time.time(),
+                'status':      'queued',
+                'progress':    'Queued...',
+                'message':     '',
+                'created_at':  time.time(),
                 'last_update': time.time(),
-                'file_count': len(file_urls)
+                'file_count':  len(resolved_items),
             }
 
-        thread = Thread(
-            target=stream_upload_to_discord,
-            args=(job_id, file_urls, token, channel_id, custom_filenames, message_content)
-        )
-        thread.daemon = True
-        thread.start()
+        Thread(
+            target=upload_worker,
+            args=(job_id, resolved_items, token, channel_id, message_content),
+            daemon=True
+        ).start()
 
-        return jsonify({'success': True, 'job_id': job_id, 'message': 'Upload started'}), 200
+        return jsonify({'success': True, 'job_id': job_id}), 200
 
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -208,16 +351,18 @@ def status(job_id):
     with jobs_lock:
         if job_id not in jobs:
             return jsonify({'status': 'not_found'}), 404
-        job_data = jobs[job_id].copy()
-    return jsonify(job_data), 200, {'Cache-Control': 'no-cache'}
+        data = jobs[job_id].copy()
+    return jsonify(data), 200, {'Cache-Control': 'no-cache'}
 
 
 @app.route('/jobs')
 def list_jobs():
     with jobs_lock:
-        active = sum(1 for j in jobs.values() if j['status'] in ['queued', 'checking', 'downloading', 'uploading'])
-        jobs_copy = {k: v.copy() for k, v in jobs.items()}
-    return jsonify({'total': len(jobs_copy), 'active': active, 'jobs': jobs_copy, 'timestamp': time.time()})
+        active = sum(1 for j in jobs.values()
+                     if j['status'] in ('queued', 'preparing', 'uploading'))
+        snap = {k: v.copy() for k, v in jobs.items()}
+    return jsonify({'total': len(snap), 'active': active,
+                    'jobs': snap, 'timestamp': time.time()})
 
 
 @app.route('/keep-alive')
@@ -226,41 +371,38 @@ def keep_alive():
         try:
             for _ in range(300):
                 with jobs_lock:
-                    active_jobs = {
-                        k: {'status': v['status'], 'progress': v['progress'], 'message': v.get('message', '')}
+                    active = {
+                        k: {'status': v['status'], 'progress': v['progress'],
+                            'message': v.get('message', '')}
                         for k, v in jobs.items()
-                        if v['status'] in ['queued', 'checking', 'downloading', 'uploading']
+                        if v['status'] in ('queued', 'preparing', 'uploading')
                     }
-                yield f"data: {json.dumps({'timestamp': time.time(), 'active_jobs': len(active_jobs), 'jobs': active_jobs})}\n\n"
-                if not active_jobs:
+                yield f"data: {json.dumps({'ts': time.time(), 'active_jobs': len(active), 'jobs': active})}\n\n"
+                if not active:
                     break
-                time.sleep(20)
+                time.sleep(15)
         except GeneratorExit:
             pass
 
     return Response(generate(), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'})
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no',
+                             'Connection': 'keep-alive'})
 
 
-def cleanup_old_jobs():
+# ── Cleanup ────────────────────────────────────────────────────────────────────
+
+def _cleanup_loop():
     while True:
         time.sleep(300)
-        now = time.time()
+        cutoff = time.time() - 3600
         with jobs_lock:
-            old = [j for j, d in jobs.items() if now - d.get('last_update', d['created_at']) > 3600]
-            for j in old:
-                if j in temp_files:
-                    for path, _ in temp_files[j]:
-                        try:
-                            if os.path.exists(path):
-                                os.remove(path)
-                        except Exception:
-                            pass
-                    del temp_files[j]
-                del jobs[j]
+            old = [jid for jid, d in jobs.items()
+                   if d.get('last_update', d['created_at']) < cutoff]
+            for jid in old:
+                del jobs[jid]
 
 
-cleanup_thread = Thread(target=cleanup_old_jobs, daemon=True)
-cleanup_thread.start()
+Thread(target=_cleanup_loop, daemon=True).start()
 
 app = app
