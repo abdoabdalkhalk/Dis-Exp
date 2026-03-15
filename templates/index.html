@@ -1,417 +1,791 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord File Uploader</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 500px;
-            width: 100%;
-        }
-        
-        h1 {
-            color: #5865F2;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 28px;
-        }
-        
-        .form-group { margin-bottom: 20px; }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #4a5568;
-            font-weight: 600;
-        }
-        
-        .label-optional {
-            color: #a0aec0;
-            font-weight: 400;
-            font-size: 13px;
-        }
-        
-        input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        
-        input:focus {
-            outline: none;
-            border-color: #5865F2;
-        }
-        
-        button {
-            width: 100%;
-            padding: 14px;
-            background: #5865F2;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 10px;
-        }
-        
-        button:hover { 
-            background: #4752c4;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(88, 101, 242, 0.4);
-        }
-        
-        button:disabled {
-            background: #cbd5e0;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .message {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            display: none;
-            animation: slideIn 0.3s ease;
-        }
-        
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .success {
-            background: #c6f6d5;
-            color: #2f855a;
-            border: 2px solid #9ae6b4;
-        }
-        
-        .info {
-            background: #bee3f8;
-            color: #2c5282;
-            border: 2px solid #90cdf4;
-        }
-        
-        .warning {
-            background: #feebc8;
-            color: #c05621;
-            border: 2px solid #fbd38d;
-        }
-        
-        .alert-box {
-            background: #e6fffa;
-            border: 2px solid #81e6d9;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            line-height: 1.6;
-            color: #234e52;
-        }
-        
-        .alert-box strong {
-            display: block;
-            margin-bottom: 8px;
-            color: #1a365d;
-            font-size: 15px;
-        }
-        
-        .hint {
-            font-size: 12px;
-            color: #718096;
-            margin-top: 5px;
-        }
-        
-        .job-id {
-            background: #f7fafc;
-            padding: 10px;
-            border-radius: 6px;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 14px;
-            color: #2d3748;
-        }
-        
-        .live-status {
-            background: #f0f4ff;
-            border: 2px solid #a0c4ff;
-            border-radius: 8px;
-            padding: 12px;
-            margin-top: 15px;
-            display: none;
-        }
-        
-        .live-status.active {
-            display: block;
-        }
-        
-        .status-pulse {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            background: #48bb78;
-            border-radius: 50%;
-            margin-left: 8px;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        
-        .download-box {
-            background: #d4edda;
-            border: 2px solid #28a745;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 15px;
-            display: none;
-        }
-        
-        .download-box.active {
-            display: block;
-        }
-        
-        .download-btn {
-            background: #28a745;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 6px;
-            text-decoration: none;
-            display: inline-block;
-            margin-top: 10px;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .download-btn:hover {
-            background: #218838;
-            transform: translateY(-2px);
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discord Uploader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #18181f;
+    --border: rgba(255,255,255,0.07);
+    --border-hover: rgba(255,255,255,0.15);
+    --accent: #5865f2;
+    --accent2: #eb459e;
+    --accent3: #57f287;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --danger: #ed4245;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 60px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(88,101,242,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(88,101,242,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glow blobs */
+  body::after {
+    content: '';
+    position: fixed;
+    width: 600px; height: 600px;
+    top: -200px; left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse, rgba(88,101,242,0.12) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 680px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 32px 0 8px;
+  }
+
+  .header-icon {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 8px 32px rgba(88,101,242,0.35);
+  }
+
+  .header-text h1 {
+    font-size: 26px; font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header-text p {
+    font-size: 13px; color: var(--muted); font-family: var(--mono);
+    margin-top: 2px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--border-hover); }
+
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .card-header-left {
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .card-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 3px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .card-title {
+    font-size: 14px; font-weight: 600; color: var(--text);
+  }
+
+  .card-body { padding: 20px; }
+
+  /* Form elements */
+  .field { display: flex; flex-direction: column; gap: 7px; }
+
+  .field + .field { margin-top: 16px; }
+
+  label {
+    font-size: 12px; font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-family: var(--mono);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  label .badge {
+    background: rgba(255,255,255,0.06);
+    color: var(--muted);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: lowercase;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+
+  input, textarea {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 11px 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    resize: none;
+    width: 100%;
+  }
+
+  input::placeholder, textarea::placeholder { color: var(--muted); }
+
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(88,101,242,0.15);
+  }
+
+  input[type="password"] { letter-spacing: 2px; }
+  input[type="password"]::placeholder { letter-spacing: 0; }
+
+  .input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* File entries */
+  .files-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .file-entry {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    position: relative;
+    animation: fadeSlide 0.25s ease;
+  }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .file-entry-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .file-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(88,101,242,0.1);
+    padding: 2px 7px;
+    border-radius: 5px;
+    border: 1px solid rgba(88,101,242,0.2);
+    flex-shrink: 0;
+  }
+
+  .remove-file {
+    margin-left: auto;
+    background: rgba(237,66,69,0.1);
+    border: 1px solid rgba(237,66,69,0.2);
+    color: var(--danger);
+    border-radius: 6px;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 14px; line-height: 1;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .remove-file:hover { background: rgba(237,66,69,0.2); }
+
+  .file-entry .input-row { margin-top: 0; }
+
+  .add-file-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: transparent;
+    border: 1px dashed var(--border-hover);
+    border-radius: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+  }
+
+  .add-file-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(88,101,242,0.05);
+  }
+
+  /* Submit button */
+  .submit-btn {
+    width: 100%;
+    padding: 14px 24px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 4px;
+  }
+
+  .submit-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .submit-btn:hover:not(:disabled) {
+    background: #4752c4;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(88,101,242,0.4);
+  }
+
+  .submit-btn:active:not(:disabled) { transform: translateY(0); }
+
+  .submit-btn:disabled {
+    background: var(--surface2);
+    color: var(--muted);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Status card */
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .status-card.visible { display: block; animation: fadeSlide 0.3s ease; }
+
+  .status-bar {
+    height: 3px;
+    background: var(--surface2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .status-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%;
+    transition: width 0.5s ease;
+    position: relative;
+  }
+
+  .status-bar-fill.indeterminate {
+    width: 40% !important;
+    animation: slide 1.4s ease-in-out infinite;
+  }
+
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  .status-body { padding: 20px; }
+
+  .status-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent3);
+    flex-shrink: 0;
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  .status-dot.done { background: var(--accent3); animation: none; }
+  .status-dot.error { background: var(--danger); animation: none; }
+  .status-dot.working { background: var(--accent); }
+
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .status-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .job-id-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .status-message {
+    font-size: 13px;
+    color: var(--muted);
+    font-family: var(--mono);
+    padding: 10px 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    word-break: break-all;
+  }
+
+  .status-message.success { border-color: rgba(87,242,135,0.3); color: var(--accent3); }
+  .status-message.error { border-color: rgba(237,66,69,0.3); color: var(--danger); }
+
+  /* Save notice */
+  .save-notice {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    padding: 0 4px;
+  }
+
+  .save-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+    flex-shrink: 0;
+  }
+
+  /* Divider */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+  }
+
+  /* Toggle password */
+  .input-wrap { position: relative; }
+  .toggle-pw {
+    position: absolute;
+    right: 12px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 15px;
+    padding: 2px;
+    transition: color 0.2s;
+    display: flex; align-items: center;
+  }
+  .toggle-pw:hover { color: var(--text); }
+  .input-wrap input { padding-right: 38px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>📤 رافع ملفات Discord</h1>
-        
-        <div class="alert-box">
-            <strong>🚀 يعمل في الخلفية!</strong>
-            بعد الضغط على "رفع الملف"، يمكنك:<br>
-            ✅ إغلاق الصفحة<br>
-            ✅ إغلاق المتصفح<br>
-            ✅ إيقاف جهازك<br>
-            <br>
-            السيرفر سيكمل الرفع تلقائياً! 🎯
-        </div>
-        
-        <form id="uploadForm">
-            <div class="form-group">
-                <label for="token">🔑 توكن الحساب (User Token):</label>
-                <input type="password" id="token" required 
-                       placeholder="ضع توكن حسابك هنا">
-            </div>
-            
-            <div class="form-group">
-                <label for="channel_id">📺 معرف القناة (Channel ID):</label>
-                <input type="text" id="channel_id" required 
-                       placeholder="123456789012345678">
-            </div>
-            
-            <div class="form-group">
-                <label for="file_url">🔗 رابط الملف المباشر:</label>
-                <input type="url" id="file_url" required 
-                       placeholder="https://example.com/file.zip">
-            </div>
-            
-            <div class="form-group">
-                <label for="custom_filename">
-                    ✏️ اسم مخصص للملف 
-                    <span class="label-optional">(اختياري)</span>
-                </label>
-                <input type="text" id="custom_filename" 
-                       placeholder="my-video (بدون امتداد)">
-                <div class="hint">اتركه فارغاً للحفاظ على الاسم الأصلي</div>
-            </div>
-            
-            <button type="submit" id="submitBtn">🚀 رفع الملف</button>
-            
-            <div class="message" id="message"></div>
-            
-            <div class="download-box" id="downloadBox">
-                <strong>✅ الملف جاهز للتحميل من السيرفر!</strong>
-                <br>
-                <a href="#" id="downloadLink" class="download-btn" target="_blank">
-                    ⬇️ تحميل الملف
-                </a>
-                <div style="margin-top: 10px; font-size: 13px; color: #155724;">
-                    الآن سيتم رفعه تلقائياً للديسكورد...
-                </div>
-            </div>
-            
-            <div class="live-status" id="liveStatus">
-                <strong>
-                    <span class="status-pulse"></span>
-                    حالة مباشرة:
-                </strong>
-                <div id="statusText" style="margin-top: 8px; font-size: 14px;"></div>
-            </div>
-        </form>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">📡</div>
+    <div class="header-text">
+      <h1>Discord Uploader</h1>
+      <p>Upload files directly to any channel</p>
     </div>
-    
-    <script>
-        let eventSource = null;
-        let currentJobId = null;
-        
-        function startLiveTracking(jobId) {
-            currentJobId = jobId;
-            
-            // إغلاق الاتصال السابق إن وجد
-            if (eventSource) {
-                eventSource.close();
-            }
-            
-            // بدء اتصال keep-alive
-            eventSource = new EventSource('/keep-alive');
-            
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    // عرض حالة الـ job الحالي
-                    if (data.jobs && data.jobs[jobId]) {
-                        const job = data.jobs[jobId];
-                        document.getElementById('statusText').textContent = 
-                            `${job.status === 'downloading' ? '⬇️' : job.status === 'uploading' ? '⬆️' : '📋'} ${job.progress}`;
-                        document.getElementById('liveStatus').classList.add('active');
-                        
-                        // إذا أصبح الملف جاهز في temp
-                        if (job.status === 'temp_ready' && job.download_url) {
-                            const downloadBox = document.getElementById('downloadBox');
-                            const downloadLink = document.getElementById('downloadLink');
-                            downloadLink.href = job.download_url;
-                            downloadBox.classList.add('active');
-                        }
-                        
-                    } else if (data.active_jobs === 0) {
-                        // انتهت العملية
-                        document.getElementById('statusText').textContent = '✅ اكتملت العملية!';
-                        setTimeout(() => {
-                            document.getElementById('liveStatus').classList.remove('active');
-                            if (eventSource) {
-                                eventSource.close();
-                                eventSource = null;
-                            }
-                        }, 3000);
-                    }
-                } catch (e) {
-                    console.error('Error parsing event:', e);
-                }
-            };
-            
-            eventSource.onerror = (error) => {
-                console.log('EventSource connection ended');
-                if (eventSource) {
-                    eventSource.close();
-                    eventSource = null;
-                }
-            };
+  </div>
+
+  <!-- Credentials card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <span class="card-tag">01</span>
+        <span class="card-title">Credentials</span>
+      </div>
+      <span class="save-notice">
+        <span class="save-dot"></span>
+        Saved locally in your browser
+      </span>
+    </div>
+    <div class="card-body">
+      <div class="field">
+        <label>User Token</label>
+        <div class="input-wrap">
+          <input type="password" id="token" placeholder="Your Discord user token" autocomplete="off" spellcheck="false">
+          <button class="toggle-pw" type="button" onclick="togglePw()" title="Show/hide token">
+            <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Channel ID</label>
+        <input type="text" id="channel_id" placeholder="123456789012345678" maxlength="20">
+      </div>
+    </div>
+  </div>
+
+  <!-- Files card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <span class="card-tag">02</span>
+        <span class="card-title">Files</span>
+      </div>
+      <span class="card-tag" id="file-count-badge">1 file</span>
+    </div>
+    <div class="card-body">
+      <div class="files-list" id="files-list"></div>
+      <button class="add-file-btn" type="button" onclick="addFile()" style="margin-top:10px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add another file
+      </button>
+    </div>
+  </div>
+
+  <!-- Message card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <span class="card-tag">03</span>
+        <span class="card-title">Message</span>
+      </div>
+      <span class="badge" style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);padding:3px 8px;border-radius:5px;letter-spacing:0.5px;">optional</span>
+    </div>
+    <div class="card-body">
+      <div class="field">
+        <label>Custom message text</label>
+        <textarea id="message_content" rows="3" placeholder="Add a message to send with the files... (supports Discord markdown)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <button class="submit-btn" id="submitBtn" onclick="doUpload()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    Upload to Discord
+  </button>
+
+  <!-- Status -->
+  <div class="status-card" id="statusCard">
+    <div class="status-bar"><div class="status-bar-fill indeterminate" id="statusBarFill"></div></div>
+    <div class="status-body">
+      <div class="status-row">
+        <div class="status-dot working" id="statusDot"></div>
+        <span class="status-label" id="statusLabel">Starting...</span>
+        <span class="job-id-badge" id="jobIdBadge"></span>
+      </div>
+      <div class="status-message" id="statusMessage" style="display:none"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let fileCount = 0;
+  let pollingInterval = null;
+
+  // ── localStorage helpers ──────────────────────────────────────────
+  const LS_KEYS = { token: 'dc_token', channel: 'dc_channel' };
+
+  function saveCredentials() {
+    const t = document.getElementById('token').value;
+    const c = document.getElementById('channel_id').value;
+    if (t) localStorage.setItem(LS_KEYS.token, t);
+    if (c) localStorage.setItem(LS_KEYS.channel, c);
+  }
+
+  function loadCredentials() {
+    const t = localStorage.getItem(LS_KEYS.token);
+    const c = localStorage.getItem(LS_KEYS.channel);
+    if (t) document.getElementById('token').value = t;
+    if (c) document.getElementById('channel_id').value = c;
+  }
+
+  document.getElementById('token').addEventListener('change', saveCredentials);
+  document.getElementById('channel_id').addEventListener('change', saveCredentials);
+
+  // ── Toggle password visibility ────────────────────────────────────
+  function togglePw() {
+    const inp = document.getElementById('token');
+    const icon = document.getElementById('eye-icon');
+    if (inp.type === 'password') {
+      inp.type = 'text';
+      icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    } else {
+      inp.type = 'password';
+      icon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    }
+  }
+
+  // ── File management ───────────────────────────────────────────────
+  function addFile() {
+    fileCount++;
+    const list = document.getElementById('files-list');
+    const div = document.createElement('div');
+    div.className = 'file-entry';
+    div.id = `file-entry-${fileCount}`;
+    div.innerHTML = `
+      <div class="file-entry-header">
+        <span class="file-num">#${fileCount}</span>
+        <span style="font-size:12px;color:var(--muted);font-family:var(--mono);">File ${fileCount}</span>
+        ${fileCount > 1 ? `<button class="remove-file" onclick="removeFile(${fileCount})" title="Remove">×</button>` : ''}
+      </div>
+      <div class="field">
+        <label>Direct URL</label>
+        <input type="url" id="url-${fileCount}" placeholder="https://example.com/file.zip" required>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Custom filename <span class="badge">optional</span></label>
+        <input type="text" id="name-${fileCount}" placeholder="my-file (no extension)">
+      </div>
+    `;
+    list.appendChild(div);
+    updateFileCount();
+    document.getElementById(`url-${fileCount}`).focus();
+  }
+
+  function removeFile(n) {
+    const el = document.getElementById(`file-entry-${n}`);
+    if (el) {
+      el.style.animation = 'none';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(-8px)';
+      el.style.transition = 'all 0.2s';
+      setTimeout(() => el.remove(), 200);
+    }
+    setTimeout(updateFileCount, 220);
+  }
+
+  function getFileEntries() {
+    return Array.from(document.querySelectorAll('.file-entry')).map(e => {
+      const id = e.id.replace('file-entry-', '');
+      return { id, url: document.getElementById(`url-${id}`), name: document.getElementById(`name-${id}`) };
+    });
+  }
+
+  function updateFileCount() {
+    const count = document.querySelectorAll('.file-entry').length;
+    document.getElementById('file-count-badge').textContent = `${count} file${count !== 1 ? 's' : ''}`;
+    // Re-number visible entries
+    document.querySelectorAll('.file-entry').forEach((el, i) => {
+      const numBadge = el.querySelector('.file-num');
+      if (numBadge) numBadge.textContent = `#${i+1}`;
+    });
+  }
+
+  // ── Upload ────────────────────────────────────────────────────────
+  async function doUpload() {
+    const token = document.getElementById('token').value.trim();
+    const channelId = document.getElementById('channel_id').value.trim();
+    const messageContent = document.getElementById('message_content').value.trim();
+
+    if (!token || !channelId) {
+      shakeCard('01'); return;
+    }
+
+    const entries = getFileEntries();
+    const fileUrls = [], customFilenames = [];
+    let hasError = false;
+
+    for (const e of entries) {
+      const url = e.url ? e.url.value.trim() : '';
+      if (!url) { hasError = true; break; }
+      fileUrls.push(url);
+      customFilenames.push(e.name ? e.name.value.trim() : '');
+    }
+
+    if (hasError || fileUrls.length === 0) {
+      shakeCard('02'); return;
+    }
+
+    saveCredentials();
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Sending...';
+
+    showStatus('working', 'Sending job to server...');
+
+    try {
+      const res = await fetch('/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, channel_id: channelId, file_urls: fileUrls, custom_filenames: customFilenames, message_content: messageContent })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        document.getElementById('jobIdBadge').textContent = `job:${data.job_id}`;
+        showStatus('working', 'Downloading files...');
+        startPolling(data.job_id);
+      } else {
+        showStatus('error', data.message || 'Server error');
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Upload to Discord';
+      }
+    } catch (err) {
+      showStatus('error', err.message);
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Upload to Discord';
+    }
+  }
+
+  function startPolling(jobId) {
+    if (pollingInterval) clearInterval(pollingInterval);
+    pollingInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/status/${jobId}`);
+        const job = await res.json();
+
+        const statusMap = {
+          queued: ['working', 'Queued...'],
+          checking: ['working', 'Checking files...'],
+          downloading: ['working', job.progress || 'Downloading...'],
+          uploading: ['working', job.progress || 'Uploading to Discord...'],
+          completed: ['done', job.message || 'Upload complete!'],
+          failed: ['error', job.message || 'Upload failed'],
+        };
+
+        const [type, label] = statusMap[job.status] || ['working', job.progress || job.status];
+        showStatus(type, label);
+
+        if (job.status === 'completed' || job.status === 'failed') {
+          clearInterval(pollingInterval);
+          const btn = document.getElementById('submitBtn');
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Upload to Discord';
+          document.getElementById('statusBarFill').classList.remove('indeterminate');
+          document.getElementById('statusBarFill').style.width = job.status === 'completed' ? '100%' : '60%';
         }
-        
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const submitBtn = document.getElementById('submitBtn');
-            const message = document.getElementById('message');
-            
-            // إخفاء الرسائل السابقة
-            message.style.display = 'none';
-            document.getElementById('liveStatus').classList.remove('active');
-            document.getElementById('downloadBox').classList.remove('active');
-            
-            // تعطيل الزر مؤقتاً
-            submitBtn.disabled = true;
-            submitBtn.textContent = '⏳ جاري الإرسال...';
-            
-            const data = {
-                token: document.getElementById('token').value,
-                channel_id: document.getElementById('channel_id').value,
-                file_url: document.getElementById('file_url').value,
-                custom_filename: document.getElementById('custom_filename').value.trim()
-            };
-            
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    message.className = 'message success';
-                    message.innerHTML = `
-                        <strong>✅ ${result.message}</strong>
-                        <div class="job-id">
-                            Job ID: ${result.job_id}<br>
-                            <small>احتفظ به للمتابعة لاحقاً</small>
-                        </div>
-                        <br>
-                        <small>يمكنك الآن إغلاق هذه الصفحة - العملية تعمل في الخلفية! 🎉</small>
-                    `;
-                    message.style.display = 'block';
-                    
-                    // بدء التتبع المباشر
-                    startLiveTracking(result.job_id);
-                    
-                    // مسح النموذج
-                    document.getElementById('file_url').value = '';
-                    document.getElementById('custom_filename').value = '';
-                    
-                } else {
-                    throw new Error(result.message || 'فشل بدء العملية');
-                }
-                
-            } catch (error) {
-                message.className = 'message warning';
-                message.innerHTML = `<strong>⚠️ خطأ:</strong> ${error.message}`;
-                message.style.display = 'block';
-            } finally {
-                // إعادة تفعيل الزر
-                submitBtn.disabled = false;
-                submitBtn.textContent = '🚀 رفع الملف';
-            }
-        });
-        
-        // تنظيف عند إغلاق الصفحة
-        window.addEventListener('beforeunload', () => {
-            if (eventSource) {
-                eventSource.close();
-            }
-        });
-    </script>
+      } catch (e) {
+        console.error('Polling error', e);
+      }
+    }, 2000);
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────
+  function showStatus(type, message) {
+    const card = document.getElementById('statusCard');
+    const dot = document.getElementById('statusDot');
+    const label = document.getElementById('statusLabel');
+    const msgEl = document.getElementById('statusMessage');
+    const bar = document.getElementById('statusBarFill');
+
+    card.classList.add('visible');
+    label.textContent = message;
+
+    dot.className = 'status-dot';
+    msgEl.className = 'status-message';
+
+    if (type === 'done') {
+      dot.classList.add('done');
+      msgEl.classList.add('success');
+      msgEl.textContent = message;
+      msgEl.style.display = 'block';
+      label.textContent = 'Completed successfully';
+      bar.classList.remove('indeterminate');
+      bar.style.width = '100%';
+    } else if (type === 'error') {
+      dot.classList.add('error');
+      msgEl.classList.add('error');
+      msgEl.textContent = message;
+      msgEl.style.display = 'block';
+      label.textContent = 'Upload failed';
+      bar.classList.remove('indeterminate');
+      bar.style.background = 'var(--danger)';
+      bar.style.width = '60%';
+    } else {
+      dot.classList.add('working');
+      msgEl.style.display = 'none';
+      if (!bar.classList.contains('indeterminate')) {
+        bar.classList.add('indeterminate');
+      }
+    }
+  }
+
+  function shakeCard(num) {
+    const cards = document.querySelectorAll('.card');
+    cards.forEach(c => {
+      const tag = c.querySelector('.card-tag');
+      if (tag && tag.textContent === num) {
+        c.style.borderColor = 'rgba(237,66,69,0.5)';
+        c.style.animation = 'shake 0.4s ease';
+        setTimeout(() => { c.style.borderColor = ''; c.style.animation = ''; }, 600);
+      }
+    });
+  }
+
+  // Add shake keyframe dynamically
+  const shakeStyle = document.createElement('style');
+  shakeStyle.textContent = '@keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }';
+  document.head.appendChild(shakeStyle);
+
+  // ── Init ──────────────────────────────────────────────────────────
+  loadCredentials();
+  addFile(); // Start with one file entry
+</script>
 </body>
 </html>
