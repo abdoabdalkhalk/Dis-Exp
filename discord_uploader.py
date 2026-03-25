@@ -1,18 +1,3 @@
-"""
-Discord Uploader — Zero-copy streaming architecture
-====================================================
-URL files:
-  1. HEAD request  → get Content-Length + filename
-  2. GET (stream)  → pipe bytes directly into multipart body → Discord
-  No temp file written at all.
-
-Local files (uploaded from browser):
-  Already in memory/temp via Flask — sent straight to Discord.
-  Temp file is deleted immediately after upload.
-
-Multiple files → one Discord message.
-"""
-
 from flask import Flask, render_template, request, jsonify, Response
 import requests
 import time
@@ -30,15 +15,13 @@ jobs: dict = {}
 jobs_lock = Lock()
 
 TEMP_DIR = tempfile.gettempdir()
-CHUNK = 8 * 1024 * 1024   # 8 MB read chunks
+CHUNK = 8 * 1024 * 1024
 DL_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': '*/*',
-    'Accept-Encoding': 'identity',   # disable gzip so Content-Length stays accurate
+    'Accept-Encoding': 'identity',
 }
 
-
-# ── Utilities ──────────────────────────────────────────────────────────────────
 
 def sanitize(name: str) -> str:
     name = name.replace('\\', '/').split('/')[-1]
@@ -60,10 +43,6 @@ def get_mime(name: str) -> str:
 
 
 def resolve_url_meta(file_url: str, fallback_idx: int) -> tuple[str, int | None]:
-    """
-    Returns (final_filename, content_length_or_None).
-    Does one HEAD request to get filename + size.
-    """
     parsed = urlparse(file_url)
     filename = sanitize(unquote(parsed.path.split('/')[-1]))
 
@@ -93,19 +72,13 @@ def set_progress(job_id: str, status: str, progress: str):
         jobs[job_id]['last_update'] = time.time()
 
 
-# ── Streaming multipart builder ────────────────────────────────────────────────
-
 class ProgressStream:
-    """
-    Wraps a requests streaming response.
-    Reads in large chunks and updates job progress without locking on every chunk.
-    """
     def __init__(self, resp, job_id, file_idx, total_files, total_bytes):
         self.resp        = resp
         self.job_id      = job_id
         self.file_idx    = file_idx
         self.total_files = total_files
-        self.total_bytes = total_bytes   # may be None
+        self.total_bytes = total_bytes
         self.read_bytes  = 0
         self.last_update = 0.0
         self._iter       = resp.iter_content(chunk_size=CHUNK)
@@ -113,7 +86,6 @@ class ProgressStream:
         self._done       = False
 
     def read(self, size=-1):
-        # requests-toolbelt / urllib3 calls read() on our object
         if self._done and not self._buf:
             return b''
         try:
@@ -150,17 +122,14 @@ class ProgressStream:
             jobs[self.job_id]['last_update'] = now
 
 
-# ── Worker ─────────────────────────────────────────────────────────────────────
-
 def upload_worker(job_id: str, items: list, token: str,
                   channel_id: str, message_content: str = ''):
-    local_temps = []   # paths to delete after upload
+    local_temps = []
     try:
         total = len(items)
         set_progress(job_id, 'preparing', 'Resolving files...')
 
-        # ── Step 1: resolve metadata for every item ──────────────────────────
-        resolved = []   # list of dicts ready for multipart
+        resolved = []
         for i, item in enumerate(items):
             if item['type'] == 'local':
                 resolved.append({
@@ -171,7 +140,7 @@ def upload_worker(job_id: str, items: list, token: str,
                 })
                 local_temps.append(item['path'])
 
-            else:  # url
+            else:
                 raw_url    = item['url']
                 custom     = sanitize((item.get('custom_name') or '').strip())
                 fname, cl  = resolve_url_meta(raw_url, i)
@@ -185,23 +154,16 @@ def upload_worker(job_id: str, items: list, token: str,
                     'kind':    'url',
                     'url':     raw_url,
                     'filename': fname,
-                    'size':    cl,      # None if unknown
+                    'size':    cl,
                 })
 
-        # ── Step 2: build multipart and POST to Discord ───────────────────────
         set_progress(job_id, 'uploading', f'Streaming {total} file(s) → Discord...')
 
         discord_url     = f'https://discord.com/api/v10/channels/{channel_id}/messages'
         discord_headers = {'Authorization': token}
 
-        # We build the multipart body manually so we can stream URL files
-        # without writing them to disk.
-        # requests-toolbelt is not always installed, so we use a pipe approach:
-        # open all local files, open all URL streams, pass them to requests as
-        # file-like objects inside the files= list.
-
-        active_streams = []   # ProgressStream objects to close later
-        active_handles = []   # open file handles for local files
+        active_streams = []
+        active_handles = []
         files_payload  = []
 
         for idx, r in enumerate(resolved):
@@ -213,7 +175,6 @@ def upload_worker(job_id: str, items: list, token: str,
                     (f'files[{idx}]', (r['filename'], fh, mime))
                 )
             else:
-                # Open the remote stream NOW — no temp file
                 set_progress(job_id, 'uploading',
                              f'Opening stream {idx+1}/{total}: {r["filename"]}')
                 resp = requests.get(
@@ -231,7 +192,6 @@ def upload_worker(job_id: str, items: list, token: str,
         if message_content:
             data_payload['content'] = message_content
 
-        # Single POST — streams all files concurrently through urllib3
         discord_resp = requests.post(
             discord_url,
             headers=discord_headers,
@@ -269,7 +229,6 @@ def upload_worker(job_id: str, items: list, token: str,
             jobs[job_id]['last_update'] = time.time()
 
     finally:
-        # Delete local temp files uploaded from browser
         for path in local_temps:
             try:
                 if os.path.exists(path):
@@ -277,8 +236,6 @@ def upload_worker(job_id: str, items: list, token: str,
             except Exception:
                 pass
 
-
-# ── Flask routes ───────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -389,8 +346,6 @@ def keep_alive():
                              'X-Accel-Buffering': 'no',
                              'Connection': 'keep-alive'})
 
-
-# ── Cleanup ────────────────────────────────────────────────────────────────────
 
 def _cleanup_loop():
     while True:
