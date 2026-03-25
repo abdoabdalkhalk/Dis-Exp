@@ -61,7 +61,6 @@
     display: flex; flex-direction: column; gap: 14px;
   }
 
-  /* Header */
   .header { display: flex; align-items: center; gap: 16px; padding: 32px 0 8px; }
   .header-icon {
     width: 48px; height: 48px;
@@ -78,7 +77,6 @@
   }
   .header-text p { font-size: 13px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
 
-  /* Cards */
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -100,7 +98,6 @@
   .card-title { font-size: 14px; font-weight: 600; color: var(--text); }
   .card-body { padding: 18px 20px; }
 
-  /* Fields */
   .field { display: flex; flex-direction: column; gap: 7px; }
   .field + .field { margin-top: 14px; }
   label {
@@ -137,7 +134,6 @@
   .toggle-pw:hover { color: var(--text); }
   .input-wrap input { padding-right: 38px; }
 
-  /* File entries */
   .files-list { display: flex; flex-direction: column; gap: 10px; }
 
   .file-entry {
@@ -167,7 +163,6 @@
   }
   .remove-file:hover { background: rgba(237,66,69,0.25); }
 
-  /* Source toggle tabs */
   .source-tabs {
     display: flex; gap: 4px;
     background: var(--surface3); border-radius: 8px;
@@ -186,11 +181,9 @@
   }
   .source-tab:hover:not(.active) { color: var(--text); }
 
-  /* Source panels */
   .source-panel { display: none; }
   .source-panel.active { display: block; }
 
-  /* Drop zone */
   .drop-zone {
     border: 1.5px dashed var(--border-hover); border-radius: 10px;
     padding: 20px 14px; text-align: center;
@@ -209,7 +202,6 @@
   .drop-zone-text span { color: var(--accent); }
   .drop-zone-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px; opacity: 0.7; }
 
-  /* File preview */
   .file-preview {
     display: none;
     align-items: center; gap: 10px;
@@ -242,7 +234,6 @@
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
 
-  /* Add file button */
   .add-file-btn {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     background: transparent; border: 1px dashed var(--border-hover);
@@ -252,7 +243,6 @@
   }
   .add-file-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,101,242,0.05); }
 
-  /* Submit */
   .submit-btn {
     width: 100%; padding: 14px 24px;
     background: var(--accent); color: white; border: none;
@@ -273,7 +263,6 @@
   }
   .submit-btn:disabled { background: var(--surface2); color: var(--muted); cursor: not-allowed; }
 
-  /* Status */
   .status-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 16px; overflow: hidden; display: none;
@@ -340,7 +329,6 @@
     </div>
   </div>
 
-  <!-- Credentials -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-left">
@@ -368,7 +356,6 @@
     </div>
   </div>
 
-  <!-- Files -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-left">
@@ -386,7 +373,6 @@
     </div>
   </div>
 
-  <!-- Message -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-left">
@@ -408,7 +394,6 @@
     Upload to Discord
   </button>
 
-  <!-- Status -->
   <div class="status-card" id="statusCard">
     <div class="status-bar"><div class="status-bar-fill indeterminate" id="statusBarFill"></div></div>
     <div class="status-body">
@@ -427,19 +412,20 @@
   let fileCounter = 0;
   let pollingInterval = null;
 
-  // ── localStorage ──────────────────────────────────────────────────
   function saveCredentials() {
     const t = document.getElementById('token').value;
     const c = document.getElementById('channel_id').value;
     if (t) localStorage.setItem('dc_token', t);
     if (c) localStorage.setItem('dc_channel', c);
   }
+
   function loadCredentials() {
     const t = localStorage.getItem('dc_token');
     const c = localStorage.getItem('dc_channel');
     if (t) document.getElementById('token').value = t;
     if (c) document.getElementById('channel_id').value = c;
   }
+
   document.getElementById('token').addEventListener('change', saveCredentials);
   document.getElementById('channel_id').addEventListener('change', saveCredentials);
 
@@ -455,7 +441,6 @@
     }
   }
 
-  // ── File entries ──────────────────────────────────────────────────
   function addFile() {
     fileCounter++;
     const n = fileCounter;
@@ -470,7 +455,6 @@
         ${n > 1 ? `<button class="remove-file" onclick="removeFile(${n})" title="Remove">×</button>` : ''}
       </div>
 
-      <!-- Source tabs -->
       <div class="source-tabs">
         <button class="source-tab active" id="tab-url-${n}" onclick="switchTab(${n},'url')">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -482,7 +466,6 @@
         </button>
       </div>
 
-      <!-- URL panel -->
       <div class="source-panel active" id="panel-url-${n}">
         <div class="field">
           <label>Direct URL</label>
@@ -494,7 +477,6 @@
         </div>
       </div>
 
-      <!-- Local panel -->
       <div class="source-panel" id="panel-local-${n}">
         <div class="drop-zone" id="drop-${n}"
              ondragover="onDragOver(event,${n})"
@@ -541,7 +523,6 @@
     document.getElementById('file-count-badge').textContent = `${c} file${c !== 1 ? 's' : ''}`;
   }
 
-  // ── Tab switching ─────────────────────────────────────────────────
   function switchTab(n, type) {
     document.getElementById(`tab-url-${n}`).classList.toggle('active', type === 'url');
     document.getElementById(`tab-local-${n}`).classList.toggle('active', type === 'local');
@@ -549,7 +530,6 @@
     document.getElementById(`panel-local-${n}`).classList.toggle('active', type === 'local');
   }
 
-  // ── Drop zone ─────────────────────────────────────────────────────
   function onDragOver(e, n)  { e.preventDefault(); document.getElementById(`drop-${n}`).classList.add('dragover'); }
   function onDragLeave(e, n) { document.getElementById(`drop-${n}`).classList.remove('dragover'); }
   function onDrop(e, n) {
@@ -606,7 +586,6 @@
     preview.classList.remove('visible');
     drop.style.display = '';
 
-    // restore thumb div if it was replaced with img
     const existingThumb = document.getElementById(`thumb-${n}`);
     if (existingThumb && existingThumb.tagName === 'IMG') {
       const div = document.createElement('div');
@@ -635,7 +614,6 @@
     return map[ext] || '📄';
   }
 
-  // ── Upload ────────────────────────────────────────────────────────
   async function doUpload() {
     const token   = document.getElementById('token').value.trim();
     const channel = document.getElementById('channel_id').value.trim();
@@ -729,7 +707,6 @@
     }, 2000);
   }
 
-  // ── UI helpers ────────────────────────────────────────────────────
   function showStatus(type, message) {
     const card = document.getElementById('statusCard');
     const dot  = document.getElementById('statusDot');
@@ -787,7 +764,6 @@
   s.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}';
   document.head.appendChild(s);
 
-  // ── Init ──────────────────────────────────────────────────────────
   loadCredentials();
   addFile();
 </script>
