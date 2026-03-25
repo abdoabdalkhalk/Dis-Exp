@@ -1,5 +1,7 @@
 # Zoro Hex — Discord Uploader
 
+**GitHub:** https://github.com/abdoabdalkhalk/Dis-Exp
+
 A lightweight web tool to upload files and media directly to any Discord channel via URL or local file — no bots, no OAuth, just a clean interface.
 
 ---
@@ -25,7 +27,7 @@ A lightweight web tool to upload files and media directly to any Discord channel
 ## Setup
 
 ```bash
-git clone https://github.com/youruser/zoro-hex.git
+git clone https://github.com/abdoabdalkhalk/Dis-Exp.git
 cd zoro-hex
 pip install flask requests
 python app.py
