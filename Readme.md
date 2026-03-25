@@ -49,7 +49,7 @@ Then open `http://localhost:5000` in your browser.
 ## Notes
 
 - This tool uses your **user token** directly — use it responsibly and never share it
-- File size limits are enforced by Discord (25 MB for standard accounts)
+- File size limits are enforced by Discord (10 MB for standard accounts)
 - Credentials are stored only in your browser's `localStorage`
 
 ---
