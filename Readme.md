@@ -1,6 +1,7 @@
 # Zoro Hex — Discord Uploader
 
 **GitHub:** https://github.com/abdoabdalkhalk/Dis-Exp
+**Live:** https://dis.zorohex.shop
 
 A lightweight web tool to upload files and media directly to any Discord channel via URL or local file — no bots, no OAuth, just a clean interface.
 
